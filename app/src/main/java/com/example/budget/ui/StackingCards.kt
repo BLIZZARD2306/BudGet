@@ -15,7 +15,7 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.onPlaced
-import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Constraints
@@ -56,7 +56,7 @@ private class StackGeometry {
 
 /**
  * Cards that pin near the top as you scroll and pile up like a deck; covered cards shrink and dim.
- * Must sit directly inside the Column that [scrollState] scrolls, and that column must start at
+ * Must sit inside the Column that [scrollState] scrolls, and that column must start at
  * the top of the screen. Cards stay in normal reading order for TalkBack.
  */
 @Composable
@@ -79,7 +79,7 @@ fun <T> StackingCards(
     val viewport = with(LocalDensity.current) { screenHeight.toPx() }
 
     Layout(
-        modifier = modifier.onPlaced { geo.trackTop = it.positionInParent().y },
+        modifier = modifier.onPlaced { geo.trackTop = it.positionInRoot().y + scrollState.value },
         content = {
             items.forEachIndexed { i, item ->
                 Box(
