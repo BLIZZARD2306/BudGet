@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Mascot, inset so it stays inside the adaptive icon's safe zone. -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:inset="22%">
+    <bitmap
+        android:filter="false"
+        android:gravity="fill"
+        android:src="@drawable/mascot" />
+</inset>
