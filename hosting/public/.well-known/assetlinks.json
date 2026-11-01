@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.budgetgoblin.app",
+      "sha256_cert_fingerprints": [
+        "28:5E:75:6C:E4:AB:6F:45:C8:46:45:D2:7F:6D:D0:2A:CD:D9:F4:D5:56:F2:F0:DF:49:35:04:79:F0:2D:61:65"
+      ]
+    }
+  }
+]

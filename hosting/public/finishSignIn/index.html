@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BudGet sign-in</title>
+  <style>
+    :root {
+      --bg: #f5f2ef; --card: #ffffff; --text: #2f3140; --muted: #8e8a86; --coral: #ff7b4a; --coral-light: #ff9a6c;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #1c1e25; --card: #272a33; --text: #edeae6; --muted: #a8a6a3; }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 16px;
+      background: var(--bg); color: var(--text);
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    }
+    main {
+      width: 100%; max-width: 420px; background: var(--card); border-radius: 24px;
+      padding: 32px 24px; text-align: center; box-shadow: 0 12px 32px rgba(0, 0, 0, .08);
+    }
+    img { width: 112px; height: 112px; image-rendering: pixelated; }
+    h1 { font-size: 22px; margin: 12px 0 8px; }
+    p { color: var(--muted); line-height: 1.5; margin: 0 0 12px; }
+    a.button {
+      display: inline-block; margin-top: 12px; padding: 14px 28px; border-radius: 999px;
+      background: linear-gradient(90deg, var(--coral-light), var(--coral)); color: #fff;
+      font-weight: 700; letter-spacing: .5px; text-decoration: none;
+    }
+    a.button:focus-visible { outline: 3px solid var(--text); outline-offset: 3px; }
+    .android-only { display: none; }
+    .is-android .android-only { display: block; }
+    .is-android .desktop-only { display: none; }
+  </style>
+</head>
+<body>
+  <main>
+    <img src="/mascot.png" alt="The Budget Goblin offering help">
+    <h1>Finish signing in on your phone</h1>
+    <div class="desktop-only">
+      <p>This sign-in link only works in the BudGet app.</p>
+      <p>Open the email on the phone where BudGet is installed and tap the link there.</p>
+    </div>
+    <div class="android-only">
+      <p>Tap below to finish signing in to BudGet.</p>
+      <a class="button" id="open">Open BudGet</a>
+      <p style="margin-top:16px">Nothing happens? Make sure BudGet is installed, then tap the link in your email again.</p>
+    </div>
+  </main>
+  <script>
+    // On Android, hand this exact link (with its one-time code) to the BudGet app.
+    if (/Android/i.test(navigator.userAgent)) {
+      document.documentElement.classList.add("is-android");
+      document.getElementById("open").href =
+        "intent://" + location.host + location.pathname + location.search +
+        "#Intent;scheme=https;package=com.budgetgoblin.app;end";
+    }
+  </script>
+</body>
+</html>

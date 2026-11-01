@@ -13,3 +13,6 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# Firebase CLI deploy cache
+.firebase/

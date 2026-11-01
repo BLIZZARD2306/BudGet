@@ -1,0 +1,423 @@
+package com.budgetgoblin.app.ui
+
+import android.app.Activity
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.util.Patterns
+import androidx.compose.foundation.BorderStroke
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.credentials.exceptions.GetCredentialCancellationException
+import androidx.credentials.exceptions.NoCredentialException
+import com.budgetgoblin.app.data.Auth
+import com.google.firebase.FirebaseTooManyRequestsException
+import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+
+/** Sign in (Google or an emailed link, no passwords) or, when signed in, manage the account. */
+@Composable
+fun AccountScreen(
+    auth: Auth,
+    onMessage: (Tip) -> Unit,
+    onClose: () -> Unit,
+    onSignOut: () -> Unit,
+    onDeleteAccount: () -> Unit,
+) {
+    val user = auth.user
+    ScreenColumn(rememberScrollState(), headerHeight = 230.dp) {
+        if (user == null) {
+            SignedOut(auth, onMessage, onClose)
+        } else {
+            ScreenTitle("Your account", "Keep your budget on every phone")
+            SignedIn(auth, onSignOut, onDeleteAccount)
+        }
+    }
+}
+
+private enum class EmailStep { CHOOSE, ENTER, SENT }
+
+private const val RESEND_SECONDS = 60
+
+/**
+ * Signed-out flow, one screen per step like the kit: choose a method, enter an email,
+ * then a "check your email" screen with resend.
+ */
+@Composable
+private fun ColumnScope.SignedOut(auth: Auth, onMessage: (Tip) -> Unit, onClose: () -> Unit) {
+    val activity = LocalContext.current as Activity
+    val scope = rememberCoroutineScope()
+    var step by rememberSaveable { mutableStateOf(EmailStep.CHOOSE) }
+    var email by rememberSaveable { mutableStateOf(auth.pendingEmail ?: "") }
+    var sentAt by rememberSaveable { mutableLongStateOf(0L) }
+    var busy by rememberSaveable { mutableStateOf(false) }
+    BackHandler(enabled = step != EmailStep.CHOOSE) {
+        step = if (step == EmailStep.SENT) EmailStep.ENTER else EmailStep.CHOOSE
+    }
+
+    fun send() {
+        busy = true
+        scope.launch {
+            try {
+                auth.sendEmailLink(email.trim())
+                sentAt = System.currentTimeMillis()
+                step = EmailStep.SENT
+            } catch (e: Exception) {
+                onMessage(Tip(Mood.SAD, sendError(e)))
+            }
+            busy = false
+        }
+    }
+
+    when (step) {
+        EmailStep.CHOOSE -> {
+            ScreenTitle("Sign in", "Keep your budget on every phone")
+            ChooseMethod(
+                available = auth.available,
+                busy = busy,
+                onGoogle = {
+                    busy = true
+                    scope.launch {
+                        try {
+                            auth.signInWithGoogle(activity)
+                        } catch (_: GetCredentialCancellationException) {
+                            // The user closed the account picker.
+                        } catch (_: NoCredentialException) {
+                            onMessage(Tip(Mood.HELP, "No Google account on this phone. Add one in Settings, or continue with email."))
+                        } catch (e: Exception) {
+                            onMessage(Tip(Mood.SAD, "Couldn't sign in: ${e.message}"))
+                        }
+                        busy = false
+                    }
+                },
+                onEmail = { step = EmailStep.ENTER },
+            )
+            TextButton(onClick = onClose, modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 12.dp)) {
+                Text("Not now")
+            }
+        }
+        EmailStep.ENTER -> {
+            BackTitle("Sign in with email") { step = EmailStep.CHOOSE }
+            EnterEmail(
+                email = email,
+                onEmailChange = { email = it },
+                busy = busy,
+                onSend = ::send,
+            )
+        }
+        EmailStep.SENT -> {
+            BackTitle("Check your email") { step = EmailStep.ENTER }
+            LinkSent(
+                email = email.trim(),
+                sentAt = sentAt,
+                busy = busy,
+                onResend = ::send,
+                onOpenEmail = {
+                    val intent = Intent.makeMainSelectorActivity(Intent.ACTION_MAIN, Intent.CATEGORY_APP_EMAIL)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    try {
+                        activity.startActivity(intent)
+                    } catch (_: ActivityNotFoundException) {
+                        onMessage(Tip(Mood.HELP, "No email app found. Open your email in a browser on this phone instead."))
+                    }
+                },
+                onChangeEmail = { step = EmailStep.ENTER },
+            )
+        }
+    }
+}
+
+private fun sendError(e: Exception) = when (e) {
+    is FirebaseTooManyRequestsException -> "Too many emails sent for now. Try again later, or continue with Google."
+    is FirebaseAuthInvalidCredentialsException -> "That email address doesn't look right."
+    else -> "Couldn't send the link: ${e.message}"
+}
+
+/** The kit's sub-screen title: a back arrow on the left, title centred. */
+@Composable
+private fun BackTitle(title: String, onBack: () -> Unit) {
+    Box(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp), contentAlignment = Alignment.Center) {
+        IconButton(onClick = onBack, modifier = Modifier.align(Alignment.CenterStart)) {
+            Text("←", fontSize = 22.sp, modifier = Modifier.semantics { contentDescription = "Back" })
+        }
+        Text(
+            title,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.semantics { heading() },
+        )
+    }
+}
+
+@Composable
+private fun ChooseMethod(available: Boolean, busy: Boolean, onGoogle: () -> Unit, onEmail: () -> Unit) {
+    Panel {
+        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+            Mascot(Mood.GUARDING, size = 96.dp)
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Sync across your phones",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.semantics { heading() },
+            )
+            Text(
+                "Sign in to back up your budget and pick up where you left off on any phone. No password needed.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+        }
+
+        if (!available) {
+            Spacer(Modifier.height(16.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Mascot(Mood.ALERT, size = 48.dp)
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "Sign-in isn't switched on in this build yet. It needs google-services.json from Firebase.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+
+        Spacer(Modifier.height(20.dp))
+        OutlineButton("Continue with Google", leading = "G", enabled = available && !busy, onClick = onGoogle)
+        Spacer(Modifier.height(12.dp))
+        OutlineButton("Continue with email", leading = "✉", enabled = available && !busy, onClick = onEmail)
+        if (busy) {
+            Spacer(Modifier.height(12.dp))
+            CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally))
+        }
+    }
+}
+
+@Composable
+private fun EnterEmail(email: String, onEmailChange: (String) -> Unit, busy: Boolean, onSend: () -> Unit) {
+    val valid = Patterns.EMAIL_ADDRESS.matcher(email.trim()).matches()
+    Panel {
+        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+            Mascot(Mood.ADDING, size = 96.dp)
+            Spacer(Modifier.height(8.dp))
+            Text("Enter your email", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(
+                "We'll email you a sign-in link. Tap it on this phone and you're in: no password, nothing to type.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+        }
+        Spacer(Modifier.height(20.dp))
+        OutlinedTextField(
+            value = email,
+            onValueChange = onEmailChange,
+            label = { Text("Email address") },
+            singleLine = true,
+            shape = RoundedCornerShape(16.dp),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Send),
+            keyboardActions = KeyboardActions(onSend = { if (valid && !busy) onSend() }),
+            trailingIcon = if (valid) ({ Text("✓", color = MaterialTheme.colorScheme.tertiary, fontWeight = FontWeight.Bold) }) else null,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(20.dp))
+        PillButton("Send sign-in link", enabled = valid && !busy, modifier = Modifier.fillMaxWidth(), onClick = onSend)
+        if (busy) {
+            Spacer(Modifier.height(12.dp))
+            CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally))
+        }
+    }
+}
+
+@Composable
+private fun LinkSent(
+    email: String,
+    sentAt: Long,
+    busy: Boolean,
+    onResend: () -> Unit,
+    onOpenEmail: () -> Unit,
+    onChangeEmail: () -> Unit,
+) {
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(sentAt) {
+        while (true) {
+            now = System.currentTimeMillis()
+            delay(1000)
+        }
+    }
+    val wait = (RESEND_SECONDS - (now - sentAt) / 1000).coerceAtLeast(0)
+
+    Panel {
+        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+            Mascot(Mood.CURIOUS, size = 96.dp)
+            Spacer(Modifier.height(8.dp))
+            Text("Link sent!", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(
+                "We sent a sign-in link to",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(email, fontWeight = FontWeight.SemiBold)
+        }
+        Spacer(Modifier.height(16.dp))
+        Step("1", "Open the email on this phone")
+        Step("2", "Tap the Sign in link")
+        Step("3", "Not there? Check Spam or Promotions. It can take a few minutes.")
+        Spacer(Modifier.height(20.dp))
+        PillButton("Open email app", modifier = Modifier.fillMaxWidth(), onClick = onOpenEmail)
+        Spacer(Modifier.height(12.dp))
+        OutlineButton(
+            if (wait > 0) "Resend link in 0:%02d".format(wait) else "Resend link",
+            enabled = wait == 0L && !busy,
+            onClick = onResend,
+        )
+        TextButton(onClick = onChangeEmail, modifier = Modifier.align(Alignment.CenterHorizontally)) {
+            Text("Use a different email")
+        }
+    }
+}
+
+@Composable
+private fun Step(number: String, text: String) {
+    Row(Modifier.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            Modifier.size(26.dp).background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) { Text(number, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary) }
+        Spacer(Modifier.width(12.dp))
+        Text(text, style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+@Composable
+private fun OutlineButton(text: String, leading: String? = null, enabled: Boolean, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        shape = RoundedCornerShape(50),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = Modifier.fillMaxWidth().height(52.dp),
+    ) {
+        Row(horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+            if (leading != null) {
+                Text(
+                    leading,
+                    color = if (leading == "G") Color(0xFF4285F4) else MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Black,
+                    fontSize = 20.sp,
+                )
+                Spacer(Modifier.width(12.dp))
+            }
+            Text(
+                text,
+                fontWeight = FontWeight.SemiBold,
+                color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/**
+ * Sign out and delete are run by the app (onSignOut / onDeleteAccount), not here: this screen
+ * leaves the composition the moment the user is signed out, which would cancel its own coroutines.
+ */
+@Composable
+private fun SignedIn(auth: Auth, onSignOut: () -> Unit, onDeleteAccount: () -> Unit) {
+    val user = auth.user ?: return
+    var confirmDelete by rememberSaveable { mutableStateOf(false) }
+
+    Panel {
+        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+            Mascot(Mood.GUARDING, size = 96.dp)
+            Spacer(Modifier.height(8.dp))
+            Text(
+                user.displayName ?: user.email ?: "Signed in",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.semantics { heading() },
+            )
+            if (user.displayName != null && user.email != null) {
+                Text(user.email!!, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Spacer(Modifier.height(12.dp))
+            Text(
+                "✓  Synced across your phones",
+                color = MaterialTheme.colorScheme.tertiary,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                "Changes you make offline upload as soon as you're back online.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(20.dp))
+            PillButton("Sign out", modifier = Modifier.fillMaxWidth(), onClick = onSignOut)
+            TextButton(onClick = { confirmDelete = true }) {
+                Text("Delete account", color = MaterialTheme.colorScheme.error)
+            }
+        }
+    }
+
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            icon = { Mascot(Mood.SHOCKED, size = 80.dp) },
+            title = { Text("Delete your account?") },
+            text = { Text("This permanently deletes your account and every transaction, budget and challenge saved in it, on all your phones.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmDelete = false
+                    onDeleteAccount()
+                }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel") } },
+        )
+    }
+}

@@ -1,1 +1,3 @@
 /build
+# Firebase config for this project; download it from the Firebase console instead of sharing it.
+google-services.json

@@ -1,9 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Mascot, inset so it stays inside the adaptive icon's safe zone. -->
-<inset xmlns:android="http://schemas.android.com/apk/res/android"
-    android:inset="22%">
-    <bitmap
-        android:filter="false"
-        android:gravity="fill"
-        android:src="@drawable/mascot" />
-</inset>
+<!-- The goblin-face logo, already laid out for the 108dp adaptive-icon layer (see ic_launcher_logo.png). -->
+<bitmap xmlns:android="http://schemas.android.com/apk/res/android"
+    android:gravity="fill"
+    android:src="@drawable/ic_launcher_logo" />

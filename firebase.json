@@ -1,0 +1,16 @@
+{
+  "hosting": {
+    "public": "hosting/public",
+    "ignore": ["firebase.json", "**/node_modules/**"],
+    "cleanUrls": true,
+    "headers": [
+      {
+        "source": "/.well-known/assetlinks.json",
+        "headers": [{ "key": "Content-Type", "value": "application/json" }]
+      }
+    ]
+  },
+  "firestore": {
+    "rules": "firestore.rules"
+  }
+}
