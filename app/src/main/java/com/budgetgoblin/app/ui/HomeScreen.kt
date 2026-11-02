@@ -2,6 +2,7 @@ package com.budgetgoblin.app.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,11 +21,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -41,7 +40,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -54,6 +52,7 @@ import com.budgetgoblin.app.R
 import com.budgetgoblin.app.data.BudgetState
 import com.budgetgoblin.app.data.Transaction
 import com.budgetgoblin.app.data.startOfDay
+import com.budgetgoblin.app.ui.theme.CoinGold
 import com.budgetgoblin.app.ui.theme.Mint
 import com.budgetgoblin.app.ui.theme.MintDark
 import java.text.SimpleDateFormat
@@ -66,64 +65,40 @@ fun HomeScreen(state: BudgetState, signedIn: Boolean, onHelp: () -> Unit, onAcco
     val month = state.thisMonth
     val spent = month.filterNot { it.isIncome }.sumOf { it.amount }
     val budget = state.monthlyBudget
+    val left = budget - spent
     var editingBudget by rememberSaveable { mutableStateOf(false) }
     var showAll by rememberSaveable { mutableStateOf(false) }
 
-    ScreenColumn(scroll, headerHeight = 330.dp) {
-        Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            // Account button: the goblin avatar, with a green dot while signed in and syncing.
-            Box(
-                Modifier
-                    .size(48.dp)
-                    .background(MaterialTheme.colorScheme.surface, CircleShape)
-                    .clickable(onClick = onAccount)
-                    .semantics { contentDescription = if (signedIn) "Account, signed in and syncing" else "Sign in to sync" },
-                contentAlignment = Alignment.Center,
-            ) {
-                Mascot(Mood.HAPPY, size = 40.dp)
-                if (signedIn) {
-                    Box(
-                        Modifier
-                            .align(Alignment.BottomEnd)
-                            .size(14.dp)
-                            .background(MaterialTheme.colorScheme.surface, CircleShape)
-                            .padding(2.dp)
-                            .background(MaterialTheme.colorScheme.tertiary, CircleShape)
-                    )
-                }
-            }
-            if (!signedIn) {
-                TextButton(onClick = onAccount) { Text("Sign in to sync") }
-            }
-            Spacer(Modifier.weight(1f))
-            IconButton(onClick = onHelp, modifier = Modifier.semantics { contentDescription = "Help" }) {
-                Text("?", fontWeight = FontWeight.Bold, fontSize = 20.sp)
-            }
-        }
-        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("Budget for $monthName", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(
-                Modifier
-                    .clickable { editingBudget = true }
-                    .padding(horizontal = 8.dp, vertical = 4.dp)
-                    .semantics { contentDescription = "Monthly budget ${money.format(budget)}, tap to edit" },
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(money.format(budget), fontSize = 36.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.width(6.dp))
-                Icon(painterResource(R.drawable.ic_edit), null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
+    ScreenColumn(scroll) {
+        StatBar(
+            signedIn = signedIn,
+            streak = state.loggingStreak,
+            leftPercent = if (budget > 0) (left / budget * 100).toInt().coerceAtLeast(0) else 0,
+            wins = state.challengesWon,
+            onAccount = onAccount,
+            onHelp = onHelp,
+        )
         Spacer(Modifier.height(16.dp))
-        RemainingCard(remaining = budget - spent, spent = spent, budget = budget)
-        Spacer(Modifier.height(16.dp))
-        WeekPanel(state.transactions)
+        SectionBanner(
+            label = "$monthName budget",
+            title = money.format(budget),
+            color = MaterialTheme.colorScheme.primary,
+            actionIcon = R.drawable.ic_edit,
+            actionDescription = "Edit monthly budget",
+            onAction = { editingBudget = true },
+        )
+        Spacer(Modifier.height(20.dp))
+        RemainingCard(remaining = left, spent = spent, budget = budget)
         Spacer(Modifier.height(20.dp))
         SpeechBubble(overallTip(month, budget))
+        Spacer(Modifier.height(20.dp))
+        WeekPanel(state.transactions)
 
         SectionTitle("Recent") {
             if (state.transactions.size > 5) {
-                TextButton(onClick = { showAll = !showAll }) { Text(if (showAll) "Show less" else "See all") }
+                TextButton(onClick = { showAll = !showAll }) {
+                    Text(if (showAll) "SHOW LESS" else "SEE ALL", fontWeight = FontWeight.ExtraBold, letterSpacing = 0.8.sp)
+                }
             }
         }
         TransactionList(if (showAll) state.transactions else state.transactions.take(5), state::delete)
@@ -138,7 +113,61 @@ fun HomeScreen(state: BudgetState, signedIn: Boolean, onHelp: () -> Unit, onAcco
     }
 }
 
-/** The kit's green "Remaining budget" panel, as a 3D tilt card with the goblin floating above it. */
+/** Duolingo-style top row: avatar (account), streak, budget left, challenges won, help. */
+@Composable
+private fun StatBar(
+    signedIn: Boolean,
+    streak: Int,
+    leftPercent: Int,
+    wins: Int,
+    onAccount: () -> Unit,
+    onHelp: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        // Account button: the goblin avatar, with a green dot while signed in and syncing.
+        Box(
+            Modifier
+                .size(44.dp)
+                .border(2.dp, scheme.outlineVariant, CircleShape)
+                .background(scheme.surface, CircleShape)
+                .clickable(onClick = onAccount)
+                .semantics { contentDescription = if (signedIn) "Account, signed in and syncing" else "Sign in to sync" },
+            contentAlignment = Alignment.Center,
+        ) {
+            Mascot(Mood.HAPPY, size = 34.dp)
+            if (signedIn) {
+                Box(
+                    Modifier
+                        .align(Alignment.BottomEnd)
+                        .size(14.dp)
+                        .background(scheme.surface, CircleShape)
+                        .padding(2.dp)
+                        .background(scheme.tertiary, CircleShape)
+                )
+            }
+        }
+        Row(Modifier.weight(1f), horizontalArrangement = Arrangement.SpaceEvenly) {
+            StatItem(
+                "🔥", "$streak",
+                if (streak > 0) Color(0xFFFF9600) else scheme.onSurfaceVariant,
+                "$streak day logging streak",
+            )
+            StatItem("🪙", "$leftPercent%", CoinGold, "$leftPercent percent of budget left")
+            StatItem("🏆", "$wins", Mint, "$wins challenges won")
+        }
+        IconButton(onClick = onHelp, modifier = Modifier.semantics { contentDescription = "Help" }) {
+            Text("?", fontWeight = FontWeight.Black, fontSize = 22.sp, color = scheme.onSurfaceVariant)
+        }
+    }
+    if (!signedIn) {
+        TextButton(onClick = onAccount, modifier = Modifier.padding(top = 4.dp)) {
+            Text("SIGN IN TO SYNC", fontWeight = FontWeight.ExtraBold, letterSpacing = 0.8.sp)
+        }
+    }
+}
+
+/** The green "Remaining budget" card, as a 3D tilt card with the goblin floating above it. */
 @Composable
 private fun RemainingCard(remaining: Double, spent: Double, budget: Double) {
     TiltCard(
@@ -149,33 +178,36 @@ private fun RemainingCard(remaining: Double, spent: Double, budget: Double) {
         Box {
             Mascot(
                 if (remaining > 0) Mood.GUARDING else Mood.BROKE,
-                size = 92.dp,
-                modifier = Modifier.align(Alignment.TopEnd).padding(top = 14.dp, end = 14.dp).depth(50.dp),
+                size = 96.dp,
+                modifier = Modifier.align(Alignment.TopEnd).padding(top = 12.dp, end = 12.dp).depth(50.dp),
             )
             Column(Modifier.fillMaxWidth().padding(24.dp)) {
-                Text("Remaining budget", color = Color.White.copy(alpha = 0.85f), modifier = Modifier.depth(20.dp))
+                Text(
+                    "REMAINING",
+                    color = Color.White.copy(alpha = 0.85f),
+                    fontWeight = FontWeight.ExtraBold,
+                    letterSpacing = 0.8.sp,
+                    modifier = Modifier.depth(20.dp),
+                )
                 Text(
                     money.format(remaining),
                     color = Color.White,
-                    fontSize = 34.sp,
-                    fontWeight = FontWeight.Bold,
+                    fontSize = 36.sp,
+                    fontWeight = FontWeight.Black,
                     modifier = Modifier.depth(40.dp),
                 )
                 Spacer(Modifier.height(20.dp))
-                LinearProgressIndicator(
-                    progress = { if (budget > 0) (spent / budget).toFloat().coerceIn(0f, 1f) else 1f },
-                    modifier = Modifier.fillMaxWidth().height(8.dp).depth(30.dp),
+                ChunkyProgress(
+                    progress = if (budget > 0) (spent / budget).toFloat() else 1f,
                     color = Color.White,
-                    trackColor = Color.White.copy(alpha = 0.3f),
-                    strokeCap = StrokeCap.Round,
-                    gapSize = 0.dp,
-                    drawStopIndicator = {},
+                    track = Color.White.copy(alpha = 0.3f),
+                    modifier = Modifier.depth(30.dp),
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
                     "${money.format(spent)} spent · ${if (budget > 0) (spent / budget * 100).toInt() else 0}% used",
-                    color = Color.White.copy(alpha = 0.85f),
-                    fontSize = 13.sp,
+                    color = Color.White.copy(alpha = 0.9f),
+                    fontWeight = FontWeight.Bold,
                     modifier = Modifier.depth(30.dp),
                 )
             }
@@ -183,7 +215,7 @@ private fun RemainingCard(remaining: Double, spent: Double, budget: Double) {
     }
 }
 
-/** Spending for each of the last 7 days as rounded bars (today in coral), plus today vs yesterday. */
+/** Spending for each of the last 7 days as chunky rounded bars (today in coral), plus today vs yesterday. */
 @Composable
 private fun WeekPanel(transactions: List<Transaction>) {
     val days = (6 downTo 0).map { ago ->
@@ -193,12 +225,12 @@ private fun WeekPanel(transactions: List<Transaction>) {
     }
     val labels = (6 downTo 0).map { Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -it) }.get(Calendar.DAY_OF_MONTH) }
     val max = days.max().coerceAtLeast(1.0)
-    val bar = MaterialTheme.colorScheme.secondary.copy(alpha = 0.55f)
+    val bar = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
     val today = MaterialTheme.colorScheme.primary
     val track = MaterialTheme.colorScheme.outlineVariant
 
     Panel {
-        Text("This week", fontWeight = FontWeight.Bold)
+        Text("This week", style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(16.dp))
         Canvas(
             Modifier
@@ -210,15 +242,12 @@ private fun WeekPanel(transactions: List<Transaction>) {
                 }
         ) {
             val slot = size.width / days.size
-            val w = 8.dp.toPx()
+            val w = 14.dp.toPx()
             days.forEachIndexed { i, v ->
                 val x = slot * i + slot / 2 - w / 2
                 drawRoundRect(track, Offset(x, 0f), Size(w, size.height), CornerRadius(w / 2))
                 val h = (v / max * size.height).toFloat().coerceAtLeast(if (v > 0) w else 0f)
-                drawRoundRect(
-                    if (i == days.lastIndex) today else bar,
-                    Offset(x, size.height - h), Size(w, h), CornerRadius(w / 2),
-                )
+                drawRoundRect(if (i == days.lastIndex) today else bar, Offset(x, size.height - h), Size(w, h), CornerRadius(w / 2))
             }
         }
         Spacer(Modifier.height(6.dp))
@@ -228,13 +257,13 @@ private fun WeekPanel(transactions: List<Transaction>) {
                     "$d",
                     Modifier.weight(1f),
                     textAlign = TextAlign.Center,
-                    fontSize = 11.sp,
+                    fontSize = 12.sp,
                     color = if (i == labels.lastIndex) today else MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontWeight = if (i == labels.lastIndex) FontWeight.Bold else FontWeight.Normal,
+                    fontWeight = if (i == labels.lastIndex) FontWeight.Black else FontWeight.Bold,
                 )
             }
         }
-        HorizontalDivider(Modifier.padding(vertical = 14.dp), color = MaterialTheme.colorScheme.outlineVariant)
+        HorizontalDivider(Modifier.padding(vertical = 14.dp), thickness = 2.dp, color = MaterialTheme.colorScheme.outlineVariant)
         Row {
             DayTotal("TODAY", days[6], today, Modifier.weight(1f))
             DayTotal("YESTERDAY", days[5], MaterialTheme.colorScheme.onSurface, Modifier.weight(1f))
@@ -245,8 +274,8 @@ private fun WeekPanel(transactions: List<Transaction>) {
 @Composable
 private fun DayTotal(label: String, amount: Double, color: Color, modifier: Modifier) {
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(label, fontSize = 11.sp, letterSpacing = 1.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(money.format(amount), fontSize = 20.sp, fontWeight = FontWeight.Bold, color = color)
+        Text(label, fontSize = 12.sp, letterSpacing = 1.sp, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(money.format(amount), fontSize = 22.sp, fontWeight = FontWeight.Black, color = color)
     }
 }
 
@@ -262,7 +291,7 @@ fun TransactionList(transactions: List<Transaction>, onDelete: (Transaction) -> 
         } else {
             Column(Modifier.padding(vertical = 6.dp)) {
                 transactions.forEachIndexed { i, t ->
-                    if (i > 0) HorizontalDivider(Modifier.padding(start = 76.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                    if (i > 0) HorizontalDivider(Modifier.padding(start = 76.dp), thickness = 2.dp, color = MaterialTheme.colorScheme.outlineVariant)
                     TransactionRow(t, onDelete = { onDelete(t) })
                 }
             }
@@ -280,12 +309,12 @@ private fun TransactionRow(t: Transaction, onDelete: () -> Unit) {
             CategoryBadge(t.category)
         } else {
             Box(
-                Modifier.size(44.dp).background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.18f), CircleShape),
+                Modifier.size(44.dp).background(MaterialTheme.colorScheme.tertiary, CircleShape),
                 contentAlignment = Alignment.Center,
             ) { Text("💰", fontSize = 20.sp) }
         }
         Column(Modifier.weight(1f).padding(horizontal = 14.dp)) {
-            Text(t.title, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            Text(t.title, fontWeight = FontWeight.ExtraBold, maxLines = 1)
             Text(
                 "${t.category?.label ?: "Income"} · ${dayLabel(t.date)}",
                 style = MaterialTheme.typography.bodySmall,
@@ -295,7 +324,7 @@ private fun TransactionRow(t: Transaction, onDelete: () -> Unit) {
         Text(
             (if (t.isIncome) "+" else "−") + money.format(t.amount),
             color = if (t.isIncome) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurface,
-            fontWeight = FontWeight.Bold,
+            fontWeight = FontWeight.Black,
         )
         IconButton(onClick = onDelete) {
             Icon(
@@ -314,7 +343,7 @@ private fun dayLabel(millis: Long): String = when {
     else -> SimpleDateFormat("MMM d").format(Date(millis))
 }
 
-/** The kit's "Create budget" screen as a dialog: type an amount or pick a preset. */
+/** Set the monthly budget: type an amount or pick a preset tile. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun BudgetDialog(current: Double, onDismiss: () -> Unit, onSave: (Double) -> Unit) {
@@ -332,22 +361,24 @@ private fun BudgetDialog(current: Double, onDismiss: () -> Unit, onSave: (Double
                     label = { Text("Monthly budget") },
                     prefix = { Text(money.currency?.symbol ?: "") },
                     singleLine = true,
+                    shape = RoundedCornerShape(16.dp),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.fillMaxWidth(),
                 )
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf(1000, 1500, 2000, 2500, 3000, 4000).forEach { preset ->
-                        FilterChip(
+                        Tile(
                             selected = amount == preset.toDouble(),
                             onClick = { text = preset.toString() },
-                            label = { Text(money.format(preset).substringBefore('.')) },
-                            shape = RoundedCornerShape(12.dp),
-                        )
+                            modifier = Modifier.width(84.dp).height(48.dp),
+                        ) {
+                            Text(money.format(preset).substringBefore('.'), fontWeight = FontWeight.ExtraBold)
+                        }
                     }
                 }
             }
         },
-        confirmButton = { TextButton(enabled = amount != null, onClick = { amount?.let(onSave) }) { Text("Save") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        confirmButton = { TextButton(enabled = amount != null, onClick = { amount?.let(onSave) }) { Text("SAVE", fontWeight = FontWeight.ExtraBold) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("CANCEL", fontWeight = FontWeight.ExtraBold) } },
     )
 }

@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -20,7 +19,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -40,7 +38,7 @@ fun CategoriesScreen(state: BudgetState) {
     val spentBy = Category.entries.associateWith { c -> month.filter { it.category == c }.sumOf { it.amount } }
     val top = spentBy.entries.sortedByDescending { it.value }.take(4)
 
-    ScreenColumn(scroll, headerHeight = 260.dp) {
+    ScreenColumn(scroll) {
         ScreenTitle("Top Categories", "$monthName's expenses")
         top.chunked(2).forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.padding(bottom = 14.dp)) {
@@ -115,14 +113,11 @@ private fun CategoryCard(category: Category, transactions: List<Transaction>) {
                 fontWeight = FontWeight.Bold,
             )
             Spacer(Modifier.height(10.dp))
-            LinearProgressIndicator(
-                progress = { (spent / category.monthlyLimit).toFloat().coerceIn(0f, 1f) },
-                modifier = Modifier.fillMaxWidth(0.6f).height(8.dp),
+            ChunkyProgress(
+                progress = (spent / category.monthlyLimit).toFloat(),
                 color = if (over) CoinGold else Color.White,
-                trackColor = Color.White.copy(alpha = 0.3f),
-                strokeCap = StrokeCap.Round,
-                gapSize = 0.dp,
-                drawStopIndicator = {},
+                track = Color.White.copy(alpha = 0.3f),
+                modifier = Modifier.fillMaxWidth(0.6f),
             )
             Spacer(Modifier.height(8.dp))
             Text(

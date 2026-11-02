@@ -4,20 +4,17 @@ import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.Crossfade
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
@@ -28,10 +25,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -45,8 +42,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
@@ -55,12 +50,12 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.budgetgoblin.app.R
 import com.budgetgoblin.app.data.Auth
 import com.budgetgoblin.app.data.BudgetState
 import com.budgetgoblin.app.data.CloudSync
-import com.budgetgoblin.app.ui.theme.CoralLight
+import com.budgetgoblin.app.ui.theme.ThemeMode
+import com.budgetgoblin.app.ui.theme.lip
 import com.google.firebase.auth.FirebaseAuthRecentLoginRequiredException
 import kotlinx.coroutines.launch
 
@@ -73,7 +68,14 @@ enum class Tab(val label: String, @param:DrawableRes val icon: Int) {
 }
 
 @Composable
-fun BudGetApp(state: BudgetState, auth: Auth, incomingLink: String?, onLinkHandled: () -> Unit) {
+fun BudGetApp(
+    state: BudgetState,
+    auth: Auth,
+    incomingLink: String?,
+    onLinkHandled: () -> Unit,
+    themeMode: ThemeMode,
+    onThemeMode: (ThemeMode) -> Unit,
+) {
     var tab by rememberSaveable { mutableStateOf(Tab.HOME) }
     var reaction by remember { mutableStateOf<Tip?>(null) }
     var showHelp by rememberSaveable { mutableStateOf(false) }
@@ -172,6 +174,8 @@ fun BudGetApp(state: BudgetState, auth: Auth, incomingLink: String?, onLinkHandl
                     onClose = { showAccount = false },
                     onSignOut = ::signOut,
                     onDeleteAccount = ::deleteAccount,
+                    themeMode = themeMode,
+                    onThemeMode = onThemeMode,
                 )
                 Tab.HOME -> HomeScreen(state, signedIn = auth.user != null, onHelp = { showHelp = true }, onAccount = { showAccount = true })
                 Tab.CATEGORIES -> CategoriesScreen(state)
@@ -195,23 +199,21 @@ fun BudGetApp(state: BudgetState, auth: Auth, incomingLink: String?, onLinkHandl
             Modifier
                 .fillMaxWidth()
                 .windowInsetsTopHeight(WindowInsets.statusBars)
-                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .background(MaterialTheme.colorScheme.background)
         )
-        ReactionBanner(
-            reaction = reaction,
-            onDone = { reaction = null },
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .navigationBarsPadding()
-                .padding(start = 20.dp, end = 20.dp, bottom = 104.dp),
-        )
-        if (!showAccount) {
+        // Adding a transaction is a full-screen step, so the nav bar steps aside.
+        if (!showAccount && tab != Tab.ADD) {
             BottomBar(
                 current = tab,
-                onSelect = { tab = if (it == Tab.ADD && tab == Tab.ADD) Tab.HOME else it },
+                onSelect = { tab = it },
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
         }
+        ReactionBanner(
+            reaction = reaction,
+            onDone = { reaction = null },
+            modifier = Modifier.align(Alignment.BottomCenter),
+        )
     }
 
     if (showHelp) HelpDialog(onDismiss = { showHelp = false })
@@ -284,80 +286,70 @@ private fun ConfirmEmailDialog(onDismiss: () -> Unit, onConfirm: (String) -> Uni
     )
 }
 
-/** A floating rounded bar with a raised coral + in the middle, like the kit's tab bar. */
+/**
+ * Duolingo-style nav bar: flat, a 2dp line on top, icons only. The current tab sits in an
+ * outlined rounded box; Add is always a small coral chunky button.
+ */
 @Composable
 private fun BottomBar(current: Tab, onSelect: (Tab) -> Unit, modifier: Modifier) {
-    Box(
-        modifier
-            .fillMaxWidth()
-            .navigationBarsPadding()
-            .padding(start = 20.dp, end = 20.dp, bottom = 12.dp),
-        contentAlignment = Alignment.BottomCenter,
-    ) {
-        Surface(
-            shape = RoundedCornerShape(28.dp),
-            color = MaterialTheme.colorScheme.surface,
-            shadowElevation = 16.dp,
-            modifier = Modifier.fillMaxWidth().height(68.dp),
+    val scheme = MaterialTheme.colorScheme
+    Column(modifier.fillMaxWidth().background(scheme.background)) {
+        HorizontalDivider(thickness = 2.dp, color = scheme.outlineVariant)
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .height(72.dp)
+                .selectableGroup(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceEvenly,
         ) {
-            Row(Modifier.fillMaxHeight().selectableGroup(), verticalAlignment = Alignment.CenterVertically) {
-                NavItem(Tab.HOME, current, onSelect)
-                NavItem(Tab.CATEGORIES, current, onSelect)
-                Spacer(Modifier.weight(1f))
-                NavItem(Tab.STATS, current, onSelect)
-                NavItem(Tab.CHALLENGES, current, onSelect)
+            Tab.entries.forEach { tab ->
+                if (tab == Tab.ADD) AddButton(onClick = { onSelect(Tab.ADD) }) else NavItem(tab, current, onSelect)
             }
         }
-        AddButton(open = current == Tab.ADD, onClick = { onSelect(Tab.ADD) }, modifier = Modifier.offset(y = (-26).dp))
     }
 }
 
 @Composable
-private fun RowScope.NavItem(tab: Tab, current: Tab, onSelect: (Tab) -> Unit) {
+private fun NavItem(tab: Tab, current: Tab, onSelect: (Tab) -> Unit) {
+    val scheme = MaterialTheme.colorScheme
     val selected = tab == current
-    val tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-    Column(
+    Box(
         Modifier
-            .weight(1f)
-            .fillMaxHeight()
-            .selectable(selected = selected, role = Role.Tab, onClick = { onSelect(tab) }),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
+            .size(52.dp)
+            .then(
+                if (selected) {
+                    Modifier
+                        .border(2.dp, scheme.primary.copy(alpha = 0.6f), RoundedCornerShape(14.dp))
+                        .background(scheme.primaryContainer.copy(alpha = 0.5f), RoundedCornerShape(14.dp))
+                } else Modifier
+            )
+            .selectable(selected = selected, role = Role.Tab, onClick = { onSelect(tab) })
+            .semantics { contentDescription = tab.label },
+        contentAlignment = Alignment.Center,
     ) {
-        Icon(painterResource(tab.icon), contentDescription = null, tint = tint, modifier = Modifier.size(24.dp))
-        Text(tab.label, fontSize = 10.sp, color = tint, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
-        Box(
-            Modifier
-                .padding(top = 3.dp)
-                .size(4.dp)
-                .background(if (selected) tint else Color.Transparent, CircleShape)
+        Icon(
+            painterResource(tab.icon),
+            contentDescription = null,
+            tint = if (selected) scheme.primary else scheme.onSurfaceVariant,
+            modifier = Modifier.size(28.dp),
         )
     }
 }
 
-/** The raised coral + button; it turns into an × while the Add screen is open. */
+/** The coral + for adding a transaction: a small chunky button in the middle of the bar. */
 @Composable
-private fun AddButton(open: Boolean, onClick: () -> Unit, modifier: Modifier) {
-    val turn by animateFloatAsState(if (open) 45f else 0f, label = "turn")
-    Surface(
+private fun AddButton(onClick: () -> Unit) {
+    val coral = MaterialTheme.colorScheme.primary
+    Chunky(
+        face = coral,
+        edge = coral.lip(),
+        shape = RoundedCornerShape(14.dp),
         onClick = onClick,
-        shape = CircleShape,
-        color = Color.Transparent,
-        shadowElevation = 10.dp,
-        modifier = modifier
-            .size(62.dp)
-            .semantics { contentDescription = if (open) "Close add transaction" else "Add transaction" },
+        modifier = Modifier.size(52.dp).semantics { contentDescription = "Add transaction" },
+        contentAlignment = Alignment.Center,
     ) {
-        Box(
-            Modifier.background(Brush.linearGradient(listOf(CoralLight, MaterialTheme.colorScheme.primary))),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                painterResource(R.drawable.ic_add),
-                contentDescription = null,
-                tint = Color.White,
-                modifier = Modifier.size(30.dp).rotate(turn),
-            )
-        }
+        Icon(painterResource(R.drawable.ic_add), contentDescription = null, tint = Color.White, modifier = Modifier.size(28.dp))
     }
 }

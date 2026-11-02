@@ -58,8 +58,9 @@ import androidx.credentials.exceptions.NoCredentialException
 import com.budgetgoblin.app.data.Auth
 import com.google.firebase.FirebaseTooManyRequestsException
 import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
-import kotlinx.coroutines.launch
+import com.budgetgoblin.app.ui.theme.ThemeMode
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /** Sign in (Google or an emailed link, no passwords) or, when signed in, manage the account. */
 @Composable
@@ -69,15 +70,18 @@ fun AccountScreen(
     onClose: () -> Unit,
     onSignOut: () -> Unit,
     onDeleteAccount: () -> Unit,
+    themeMode: ThemeMode,
+    onThemeMode: (ThemeMode) -> Unit,
 ) {
     val user = auth.user
-    ScreenColumn(rememberScrollState(), headerHeight = 230.dp) {
+    ScreenColumn(rememberScrollState()) {
         if (user == null) {
             SignedOut(auth, onMessage, onClose)
         } else {
             ScreenTitle("Your account", "Keep your budget on every phone")
             SignedIn(auth, onSignOut, onDeleteAccount)
         }
+        AppearancePanel(themeMode, onThemeMode)
     }
 }
 
@@ -336,29 +340,47 @@ private fun Step(number: String, text: String) {
 
 @Composable
 private fun OutlineButton(text: String, leading: String? = null, enabled: Boolean, onClick: () -> Unit) {
-    Surface(
+    OutlinePillButton(
+        text,
         onClick = onClick,
         enabled = enabled,
-        shape = RoundedCornerShape(50),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        modifier = Modifier.fillMaxWidth().height(52.dp),
-    ) {
-        Row(horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-            if (leading != null) {
+        modifier = Modifier.fillMaxWidth(),
+        leading = leading?.let {
+            {
                 Text(
-                    leading,
-                    color = if (leading == "G") Color(0xFF4285F4) else MaterialTheme.colorScheme.primary,
+                    it,
+                    color = if (it == "G") Color(0xFF4285F4) else MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.Black,
                     fontSize = 20.sp,
                 )
-                Spacer(Modifier.width(12.dp))
             }
-            Text(
-                text,
-                fontWeight = FontWeight.SemiBold,
-                color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+        },
+    )
+}
+
+/** Appearance: follow the phone, or always light / always dark. */
+@Composable
+private fun AppearancePanel(mode: ThemeMode, onMode: (ThemeMode) -> Unit) {
+    SectionTitle("Appearance")
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        ThemeMode.entries.forEach { m ->
+            Tile(
+                selected = m == mode,
+                onClick = { onMode(m) },
+                modifier = Modifier.weight(1f).height(84.dp),
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        when (m) {
+                            ThemeMode.SYSTEM -> "📱"
+                            ThemeMode.LIGHT -> "☀️"
+                            ThemeMode.DARK -> "🌙"
+                        },
+                        fontSize = 22.sp,
+                    )
+                    Text(m.label.uppercase(), fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, letterSpacing = 0.6.sp)
+                }
+            }
         }
     }
 }

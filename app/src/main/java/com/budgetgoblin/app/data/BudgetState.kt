@@ -4,6 +4,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.setValue
+import java.util.concurrent.TimeUnit
 
 /**
  * Everything the app shows, kept in Compose state and saved to [store] on every change.
@@ -32,6 +33,22 @@ class BudgetState(private val store: BudgetStore) {
 
     val thisMonth: List<Transaction> get() = transactions.filter { isThisMonth(it.date) }
     val activeChallenges get() = challenges.filter { it.status == ChallengeStatus.ACTIVE }
+    val challengesWon get() = challenges.count { it.status == ChallengeStatus.COMPLETED }
+
+    /** Days in a row (ending today, or yesterday if nothing's logged yet today) with at least one entry. */
+    val loggingStreak: Int
+        get() {
+            val dayMillis = TimeUnit.DAYS.toMillis(1)
+            val endOfToday = startOfDay(-1)
+            val days = transactions.map { ((endOfToday - 1 - it.date) / dayMillis).coerceAtLeast(0).toInt() }.toSet()
+            var day = if (0 in days) 0 else 1
+            var streak = 0
+            while (day in days) {
+                streak++
+                day++
+            }
+            return streak
+        }
 
     /** Adds [t] and returns the challenges it broke. */
     fun add(t: Transaction): List<Challenge> {

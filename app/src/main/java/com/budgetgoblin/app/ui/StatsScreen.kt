@@ -14,14 +14,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
@@ -45,7 +43,7 @@ fun StatsScreen(state: BudgetState) {
         .filter { it.second > 0 }
         .sortedByDescending { it.second }
 
-    ScreenColumn(scroll, headerHeight = 240.dp) {
+    ScreenColumn(scroll) {
         ScreenTitle("Statistics", "$monthName at a glance")
         Panel {
             Donut(slices, spent, Modifier.align(Alignment.CenterHorizontally))
@@ -174,14 +172,9 @@ private fun SavingsGoal(income: Double, spent: Double) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.height(10.dp))
-                LinearProgressIndicator(
-                    progress = { if (goal > 0) (saved / goal).toFloat().coerceIn(0f, 1f) else 0f },
-                    modifier = Modifier.fillMaxWidth().height(10.dp),
+                ChunkyProgress(
+                    progress = if (goal > 0) (saved / goal).toFloat() else 0f,
                     color = if (reached) CoinGold else MaterialTheme.colorScheme.tertiary,
-                    trackColor = MaterialTheme.colorScheme.outlineVariant,
-                    strokeCap = StrokeCap.Round,
-                    gapSize = 0.dp,
-                    drawStopIndicator = {},
                 )
             }
         }
