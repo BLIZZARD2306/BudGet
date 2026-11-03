@@ -54,7 +54,7 @@ private val CELEBRATING = setOf(Mood.CELEBRATE, Mood.LEVEL_UP, Mood.HAPPY, Mood.
  * he's celebrating, and wiggles when tapped. All of it is skipped when animations are off.
  */
 @Composable
-fun Mascot(mood: Mood, modifier: Modifier = Modifier, size: Dp = 64.dp) {
+fun Mascot(mood: Mood, modifier: Modifier = Modifier, size: Dp = 64.dp, tappable: Boolean = true) {
     val still = rememberReducedMotion()
     val scale = remember { Animatable(1f) }
     val hop = remember { Animatable(0f) }
@@ -86,8 +86,9 @@ fun Mascot(mood: Mood, modifier: Modifier = Modifier, size: Dp = 64.dp) {
                 rotationZ = tilt.value
                 transformOrigin = TransformOrigin(0.5f, 1f) // pivot at his feet
             }
-            .pointerInput(still) {
-                if (still) return@pointerInput
+            // Inside a button, let the tap through to the button instead of wiggling.
+            .pointerInput(still, tappable) {
+                if (still || !tappable) return@pointerInput
                 detectTapGestures {
                     scope.launch {
                         tilt.animateTo(0f, keyframes {

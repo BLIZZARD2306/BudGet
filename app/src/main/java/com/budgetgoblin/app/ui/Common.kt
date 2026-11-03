@@ -56,6 +56,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
@@ -422,6 +423,8 @@ fun ReactionBanner(reaction: Tip?, onDone: () -> Unit, modifier: Modifier) {
             Tone.WARN -> CoinGold
             Tone.BAD -> MaterialTheme.colorScheme.primary
         }
+        // Darker text on the light tint, brighter text on the dark one.
+        val ink = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) accent else accent.lip()
         Column(
             Modifier
                 .fillMaxWidth()
@@ -434,8 +437,8 @@ fun ReactionBanner(reaction: Tip?, onDone: () -> Unit, modifier: Modifier) {
                 Mascot(tip.mood, size = 72.dp)
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(tone.title, color = accent.lip(), fontWeight = FontWeight.Black, fontSize = 22.sp)
-                    Text(tip.text, color = accent.lip(), fontWeight = FontWeight.Bold)
+                    Text(tone.title, color = ink, fontWeight = FontWeight.Black, fontSize = 22.sp)
+                    Text(tip.text, color = ink, fontWeight = FontWeight.Bold)
                 }
             }
             Spacer(Modifier.height(12.dp))

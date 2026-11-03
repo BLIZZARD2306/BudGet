@@ -135,7 +135,7 @@ private fun StatBar(
                 .semantics { contentDescription = if (signedIn) "Account, signed in and syncing" else "Sign in to sync" },
             contentAlignment = Alignment.Center,
         ) {
-            Mascot(Mood.HAPPY, size = 34.dp)
+            Mascot(Mood.HAPPY, size = 34.dp, tappable = false)
             if (signedIn) {
                 Box(
                     Modifier

@@ -1,7 +1,9 @@
 package com.budgetgoblin.app.ui.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
@@ -69,9 +71,9 @@ fun BudGetTheme(
         ThemeMode.LIGHT -> false
         ThemeMode.DARK -> true
     }
-    MaterialTheme(
-        colorScheme = if (dark) DarkColorScheme else LightColorScheme,
-        typography = Typography,
-        content = content
-    )
+    val scheme = if (dark) DarkColorScheme else LightColorScheme
+    MaterialTheme(colorScheme = scheme, typography = Typography) {
+        // Text that doesn't pick its own colour follows the theme (light on dark in dark mode).
+        CompositionLocalProvider(LocalContentColor provides scheme.onBackground, content = content)
+    }
 }

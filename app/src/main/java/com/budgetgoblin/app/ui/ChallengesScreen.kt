@@ -101,7 +101,7 @@ fun ChallengesScreen(state: BudgetState, onReaction: (Tip) -> Unit) {
         ChallengeType.entries.forEachIndexed { i, type ->
             val running = active.firstOrNull { it.type == type }
             val wins = finished.count { it.type == type && it.status == ChallengeStatus.COMPLETED }
-            Box(Modifier.fillMaxWidth().height(if (type == next && running == null) 150.dp else 124.dp), contentAlignment = Alignment.BottomCenter) {
+            Box(Modifier.fillMaxWidth().height(if (type == next && running == null) 196.dp else 150.dp), contentAlignment = Alignment.BottomCenter) {
                 Column(
                     Modifier.offset(x = PathOffsets[i % PathOffsets.size].dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
