@@ -2,21 +2,22 @@ package com.budgetgoblin.app.ui
 
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.keyframes
-import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.size
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.imageResource
@@ -25,7 +26,6 @@ import androidx.compose.ui.unit.dp
 import com.budgetgoblin.app.R
 import com.budgetgoblin.app.data.Category
 import com.budgetgoblin.app.data.Transaction
-import kotlinx.coroutines.launch
 
 /** Every pose of the Budget Goblin, named after what it means in the app. */
 enum class Mood(@param:DrawableRes val res: Int, val description: String) {
@@ -47,30 +47,27 @@ enum class Mood(@param:DrawableRes val res: Int, val description: String) {
     HELP(R.drawable.mascot_help, "offering help"),
 }
 
-private val CELEBRATING = setOf(Mood.CELEBRATE, Mood.LEVEL_UP, Mood.HAPPY, Mood.PROUD)
-
 /**
- * The goblin in a pose. He never floats; he reacts: pops in when his mood changes, hops when
- * he's celebrating, and wiggles when tapped. All of it is skipped when animations are off.
+ * The goblin in a pose, acting it out: he waves, cries, cheers, gets a fright or thinks (see
+ * [MascotMotion]), always staying on the ground. The action plays a few times when he appears or
+ * changes mood, and again when tapped. Nothing moves when the system has animations turned off.
  */
 @Composable
 fun Mascot(mood: Mood, modifier: Modifier = Modifier, size: Dp = 64.dp, tappable: Boolean = true) {
     val still = rememberReducedMotion()
-    val scale = remember { Animatable(1f) }
-    val hop = remember { Animatable(0f) }
-    val tilt = remember { Animatable(0f) }
-    val scope = rememberCoroutineScope()
+    val motion = mood.motion()
+    val clock = remember { Animatable(0f) } // cycles elapsed; 0 means resting
+    var plays by remember { mutableIntStateOf(0) }
+    val detail = MaterialTheme.colorScheme.onSurfaceVariant // motion lines and dots that show in light and dark
 
-    LaunchedEffect(mood, still) {
-        if (still) return@LaunchedEffect
-        scale.snapTo(0.82f)
-        launch { scale.animateTo(1f, spring(dampingRatio = 0.45f, stiffness = 420f)) }
-        if (mood in CELEBRATING) {
-            repeat(2) {
-                hop.animateTo(-0.12f, tween(140, easing = FastOutSlowInEasing))
-                hop.animateTo(0f, spring(dampingRatio = 0.5f, stiffness = 900f))
-            }
-        }
+    LaunchedEffect(mood, plays, still) {
+        clock.snapTo(0f)
+        if (still || motion == MascotMotion.NONE) return@LaunchedEffect
+        clock.animateTo(
+            motion.cycles.toFloat(),
+            tween(motion.cycleMillis * motion.cycles, easing = LinearEasing),
+        )
+        clock.snapTo(0f)
     }
 
     Image(
@@ -79,27 +76,16 @@ fun Mascot(mood: Mood, modifier: Modifier = Modifier, size: Dp = 64.dp, tappable
         filterQuality = FilterQuality.None, // keep the pixel art crisp
         modifier = modifier
             .size(size)
-            .graphicsLayer {
-                scaleX = scale.value
-                scaleY = scale.value
-                translationY = hop.value * this.size.height
-                rotationZ = tilt.value
-                transformOrigin = TransformOrigin(0.5f, 1f) // pivot at his feet
+            // Read the clock only while drawing, so the animation never recomposes the screen.
+            .graphicsLayer { applyMotion(motion, clock.value) }
+            .drawWithContent {
+                drawContent()
+                drawMotion(motion, mood, clock.value, detail)
             }
-            // Inside a button, let the tap through to the button instead of wiggling.
-            .pointerInput(still, tappable) {
-                if (still || !tappable) return@pointerInput
-                detectTapGestures {
-                    scope.launch {
-                        tilt.animateTo(0f, keyframes {
-                            durationMillis = 420
-                            -9f at 70
-                            9f at 160
-                            -6f at 250
-                            4f at 330
-                        })
-                    }
-                }
+            // Tap to see it again. Inside a button, the tap goes to the button instead.
+            .pointerInput(still, tappable, motion) {
+                if (still || !tappable || motion == MascotMotion.NONE) return@pointerInput
+                detectTapGestures { plays++ }
             },
     )
 }
