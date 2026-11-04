@@ -17,6 +17,3 @@ local.properties
 # Firebase CLI deploy cache
 .firebase/
 
-# Update builds published by release.ps1 (live on Vercel, not in git)
-website/app/
-.vercel/
