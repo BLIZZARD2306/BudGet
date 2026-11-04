@@ -36,6 +36,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
@@ -54,11 +55,11 @@ import com.budgetgoblin.app.data.ChallengeType
 import com.budgetgoblin.app.ui.theme.CoinGold
 import com.budgetgoblin.app.ui.theme.Mint
 import com.budgetgoblin.app.ui.theme.lip
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /** Horizontal offsets of the path's nodes, as a gentle zig-zag. */
 private val PathOffsets = listOf(0, -64, 0, 64, 0)
@@ -91,7 +92,7 @@ fun ChallengesScreen(state: BudgetState, onReaction: (Tip) -> Unit) {
             label = "Challenges",
             title = "${state.challengesWon} won · ${active.size} running",
             color = Mint,
-            actionIcon = R.drawable.ic_nav_challenges,
+            actionIcon = R.drawable.px_nav_challenges,
             actionDescription = "Jump to trophies",
             onAction = { scope.launch { scroll.animateScrollTo(scroll.maxValue) } },
         )
@@ -215,7 +216,7 @@ private fun PathNode(type: ChallengeType, running: Challenge?, wins: Int, now: L
             modifier = Modifier.size(72.dp),
             contentAlignment = Alignment.Center,
         ) {
-            Text(type.emoji, fontSize = 28.sp)
+            PixelIcon(type.icon(), contentDescription = null, tint = if (face == scheme.outlineVariant) scheme.onSurfaceVariant else Color.White, size = 30.dp)
         }
         if (wins > 0 && running == null) {
             Box(
@@ -265,7 +266,7 @@ private fun ChallengeDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        icon = { Text(type.emoji, fontSize = 40.sp) },
+        icon = { PixelIcon(type.icon(), contentDescription = null, tint = MaterialTheme.colorScheme.primary, size = 40.dp) },
         title = { Text(type.title, textAlign = TextAlign.Center, modifier = Modifier.semantics { heading() }) },
         text = {
             Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -318,7 +319,7 @@ private fun FinishedRow(c: Challenge) {
     Row(Modifier.padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
         Mascot(if (won) Mood.LEVEL_UP else Mood.SAD, size = 52.dp)
         Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-            Text("${c.type.emoji} ${c.type.title}", fontWeight = FontWeight.ExtraBold)
+            Text(c.type.title, fontWeight = FontWeight.ExtraBold)
             Text(
                 if (won) "Completed $date" else "Ended $date",
                 fontSize = 12.sp,

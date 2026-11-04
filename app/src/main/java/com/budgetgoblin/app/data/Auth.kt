@@ -18,7 +18,14 @@ import com.google.firebase.auth.ActionCodeSettings
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
+import java.util.UUID
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -64,22 +71,68 @@ class Auth(private val context: Context) {
         auth.signInWithCredential(GoogleAuthProvider.getCredential(idToken, null)).await()
     }
 
+    /**
+     * A one-time ID carried in the email link. If the link is opened on another device (a computer),
+     * the sign-in page posts the link to handoff/<id> in the Realtime Database and this phone picks
+     * it up, so you can sign in here without your email on this device.
+     */
+    var pendingHandoff by mutableStateOf(prefs.getString(KEY_HANDOFF, null))
+        private set
+
+    private val handoffUrl get() = "$databaseUrl/handoff/$pendingHandoff.json"
+
     suspend fun sendEmailLink(email: String) {
+        val handoff = UUID.randomUUID().toString().replace("-", "")
         val settings = ActionCodeSettings.newBuilder()
-            .setUrl("https://$linkDomain/finishSignIn")
+            .setUrl("https://$linkDomain/finishSignIn?h=$handoff")
             .setHandleCodeInApp(true)
             .setAndroidPackageName(context.packageName, true, null)
             .build() // the link itself comes from the project's default firebaseapp.com domain
         auth.sendSignInLinkToEmail(email, settings).await()
-        prefs.edit { putString(KEY_PENDING_EMAIL, email) }
+        prefs.edit { putString(KEY_PENDING_EMAIL, email).putString(KEY_HANDOFF, handoff) }
+        pendingHandoff = handoff
     }
 
     fun isSignInLink(link: String) = available && auth.isSignInWithEmailLink(link)
 
     suspend fun finishEmailLink(email: String, link: String) {
         auth.signInWithEmailLink(email, link).await()
-        prefs.edit { remove(KEY_PENDING_EMAIL) }
+        if (pendingHandoff != null) runCatching { http("DELETE", handoffUrl) }
+        prefs.edit { remove(KEY_PENDING_EMAIL).remove(KEY_HANDOFF) }
+        pendingHandoff = null
     }
+
+    /**
+     * Waits (checking every 2 seconds, for up to 15 minutes) for the link to be opened on another
+     * device and returns it, or null if it never was.
+     */
+    suspend fun awaitHandoff(): String? {
+        if (pendingHandoff == null) return null
+        repeat(450) {
+            val body = runCatching { http("GET", handoffUrl) }.getOrNull()
+            if (body != null && body != "null") {
+                val link = runCatching { JSONObject(body).optString("link") }.getOrNull()
+                if (!link.isNullOrEmpty() && isSignInLink(link)) return link
+            }
+            delay(2000)
+        }
+        return null
+    }
+
+    private suspend fun http(method: String, url: String): String = withContext(Dispatchers.IO) {
+        val conn = URL(url).openConnection() as HttpURLConnection
+        try {
+            conn.requestMethod = method
+            conn.connectTimeout = 10_000
+            conn.readTimeout = 10_000
+            conn.inputStream.bufferedReader().use { it.readText() }
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    /** The Realtime Database (default US instance) that carries sign-in links between devices. */
+    private val databaseUrl get() = "https://${FirebaseApp.getInstance().options.projectId}-default-rtdb.firebaseio.com"
 
     suspend fun signOut() {
         auth.signOut()
@@ -94,5 +147,6 @@ class Auth(private val context: Context) {
 
     private companion object {
         const val KEY_PENDING_EMAIL = "pending_email"
+        const val KEY_HANDOFF = "pending_handoff"
     }
 }

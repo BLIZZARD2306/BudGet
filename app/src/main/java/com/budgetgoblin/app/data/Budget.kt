@@ -5,17 +5,20 @@ import androidx.core.content.edit
 import java.util.Calendar
 import java.util.concurrent.TimeUnit
 
-enum class Category(val label: String, val emoji: String, val monthlyLimit: Double) {
-    FOOD("Food", "🍜", 400.0),
-    TRANSPORT("Transport", "🚌", 150.0),
-    BILLS("Bills", "💡", 600.0),
-    FUN("Fun", "🎮", 200.0),
-    OTHER("Other", "📦", 250.0),
-    SHOPPING("Shopping", "🛍️", 200.0),
-    COFFEE("Coffee", "☕", 80.0),
+enum class Category(val label: String, val monthlyLimit: Double) {
+    FOOD("Food", 400.0),
+    TRANSPORT("Transport", 150.0),
+    BILLS("Bills", 600.0),
+    FUN("Fun", 200.0),
+    OTHER("Other", 250.0),
+    SHOPPING("Shopping", 200.0),
+    COFFEE("Coffee", 80.0),
 }
 
-/** Income has no category; expenses always have one. [date] is epoch millis. */
+/**
+ * Income has no category; expenses always have one. [date] is epoch millis. Income with [toBudget]
+ * is a one-time top-up: it adds to that month's spending budget.
+ */
 data class Transaction(
     val id: Long,
     val title: String,
@@ -23,6 +26,7 @@ data class Transaction(
     val isIncome: Boolean,
     val category: Category?,
     val date: Long = System.currentTimeMillis(),
+    val toBudget: Boolean = false,
 )
 
 fun isThisMonth(millis: Long, now: Long = System.currentTimeMillis()): Boolean {
@@ -41,7 +45,8 @@ fun startOfDay(daysAgo: Int, now: Long = System.currentTimeMillis()): Long =
 
 /**
  * Saves everything to SharedPreferences. Transactions are one per line:
- * id|isIncome|amount|category|date|title (older saves have no date field).
+ * id|isIncome|amount|category|date|title (older saves have no date field). A budget top-up stores
+ * [TOP_UP] in the category column.
  */
 class BudgetStore(context: Context) {
     private val prefs = context.getSharedPreferences("budget", Context.MODE_PRIVATE)
@@ -66,6 +71,18 @@ class BudgetStore(context: Context) {
 
     fun saveBudget(amount: Double) = prefs.edit { putFloat(KEY_BUDGET, amount.toFloat()) }
 
+    fun loadSchedule() = PaySchedule(
+        cycle = PayCycle.entries.firstOrNull { it.name == prefs.getString(KEY_PAY_CYCLE, null) } ?: PayCycle.MONTHLY,
+        weekStart = prefs.getInt(KEY_PAY_WEEK_START, java.util.Calendar.MONDAY),
+        anchor = prefs.getLong(KEY_PAY_ANCHOR, 0L),
+    )
+
+    fun saveSchedule(s: PaySchedule) = prefs.edit {
+        putString(KEY_PAY_CYCLE, s.cycle.name)
+        putInt(KEY_PAY_WEEK_START, s.weekStart)
+        putLong(KEY_PAY_ANCHOR, s.anchor)
+    }
+
     fun loadChallenges(): List<Challenge> =
         prefs.getString(KEY_CHALLENGES, null)?.lines()?.mapNotNull(Challenge::decode) ?: emptyList()
 
@@ -74,7 +91,7 @@ class BudgetStore(context: Context) {
     }
 
     private fun encode(t: Transaction) =
-        listOf(t.id, t.isIncome, t.amount, t.category?.name.orEmpty(), t.date, t.title.replace('\n', ' '))
+        listOf(t.id, t.isIncome, t.amount, if (t.toBudget) TOP_UP else t.category?.name.orEmpty(), t.date, t.title.replace('\n', ' '))
             .joinToString("|")
 
     private fun decode(line: String): Transaction? {
@@ -91,6 +108,7 @@ class BudgetStore(context: Context) {
             category = Category.entries.firstOrNull { it.name == parts[3] },
             date = date,
             title = if (dated) parts[5] else parts.drop(4).joinToString("|"),
+            toBudget = parts[3] == TOP_UP,
         )
     }
 
@@ -116,6 +134,10 @@ class BudgetStore(context: Context) {
 
     companion object {
         const val DEFAULT_BUDGET = 2000f
+        private const val TOP_UP = "+BUDGET"
+        private const val KEY_PAY_CYCLE = "pay_cycle"
+        private const val KEY_PAY_WEEK_START = "pay_week_start"
+        private const val KEY_PAY_ANCHOR = "pay_anchor"
         private const val KEY_TRANSACTIONS = "transactions"
         private const val KEY_SYNCED_UID = "synced_uid"
         private const val KEY_BUDGET = "monthly_budget"

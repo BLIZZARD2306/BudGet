@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- BudGet pixel icon: moon (16x16 grid). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="16"
+    android:viewportHeight="16">
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M6,1h1v1h-1zM4,2h2v1h-2zM3,3h3v1h-3zM2,4h4v1h-4zM2,5h4v1h-4zM1,6h5v1h-5zM1,7h5v1h-5zM1,8h6v1h-6zM1,9h7v1h-7zM2,10h8v1h-8zM13,10h1v1h-1zM2,11h12v1h-12zM3,12h10v1h-10zM4,13h8v1h-8zM6,14h4v1h-4z" />
+</vector>

@@ -60,18 +60,21 @@ import java.util.Calendar
 import java.util.Date
 
 @Composable
-fun HomeScreen(state: BudgetState, signedIn: Boolean, onHelp: () -> Unit, onAccount: () -> Unit) {
+fun HomeScreen(state: BudgetState, signedIn: Boolean, synced: Boolean, onHelp: () -> Unit, onAccount: () -> Unit) {
     val scroll = rememberScrollState()
-    val month = state.thisMonth
+    val month = state.thisPeriod // this pay period (a month, a week, ...)
     val spent = month.filterNot { it.isIncome }.sumOf { it.amount }
-    val budget = state.monthlyBudget
+    val budget = state.budgetThisPeriod // per-period budget plus this period's top-ups
+    val schedule = state.schedule
     val left = budget - spent
     var editingBudget by rememberSaveable { mutableStateOf(false) }
+    var addingMoney by rememberSaveable { mutableStateOf(false) }
     var showAll by rememberSaveable { mutableStateOf(false) }
 
     ScreenColumn(scroll) {
         StatBar(
             signedIn = signedIn,
+            synced = synced,
             streak = state.loggingStreak,
             leftPercent = if (budget > 0) (left / budget * 100).toInt().coerceAtLeast(0) else 0,
             wins = state.challengesWon,
@@ -80,19 +83,20 @@ fun HomeScreen(state: BudgetState, signedIn: Boolean, onHelp: () -> Unit, onAcco
         )
         Spacer(Modifier.height(16.dp))
         SectionBanner(
-            label = "$monthName budget",
-            title = money.format(budget),
+            label = schedule.bannerLabel(),
+            title = money.format(state.monthlyBudget),
             color = MaterialTheme.colorScheme.primary,
-            actionIcon = R.drawable.ic_edit,
-            actionDescription = "Edit monthly budget",
+            actionIcon = R.drawable.px_edit,
+            actionDescription = "Edit budget",
             onAction = { editingBudget = true },
         )
         Spacer(Modifier.height(20.dp))
-        RemainingCard(remaining = left, spent = spent, budget = budget)
+        RemainingCard(remaining = left, spent = spent, budget = budget, topUps = state.topUps, resets = schedule.resetLabel(), periodName = schedule.periodName, onAddMoney = { addingMoney = true })
         Spacer(Modifier.height(20.dp))
         SpeechBubble(overallTip(month, budget))
         Spacer(Modifier.height(20.dp))
         WeekPanel(state.transactions)
+        IncomeSection(month, spent, schedule.periodName)
 
         SectionTitle("Recent") {
             if (state.transactions.size > 5) {
@@ -104,9 +108,21 @@ fun HomeScreen(state: BudgetState, signedIn: Boolean, onHelp: () -> Unit, onAcco
         TransactionList(if (showAll) state.transactions else state.transactions.take(5), state::delete)
     }
 
+    if (addingMoney) {
+        AddMoneyDialog(
+            periodName = schedule.periodName,
+            onDismiss = { addingMoney = false },
+            onSave = { amount, note ->
+                val now = System.currentTimeMillis()
+                state.add(Transaction(id = now, title = note.ifBlank { "Budget top-up" }, amount = amount, isIncome = true, category = null, date = now, toBudget = true))
+                addingMoney = false
+            },
+        )
+    }
     if (editingBudget) {
         BudgetDialog(
-            current = budget,
+            current = state.monthlyBudget,
+            title = schedule.bannerLabel(),
             onDismiss = { editingBudget = false },
             onSave = { state.setBudget(it); editingBudget = false },
         )
@@ -117,6 +133,7 @@ fun HomeScreen(state: BudgetState, signedIn: Boolean, onHelp: () -> Unit, onAcco
 @Composable
 private fun StatBar(
     signedIn: Boolean,
+    synced: Boolean,
     streak: Int,
     leftPercent: Int,
     wins: Int,
@@ -132,7 +149,13 @@ private fun StatBar(
                 .border(2.dp, scheme.outlineVariant, CircleShape)
                 .background(scheme.surface, CircleShape)
                 .clickable(onClick = onAccount)
-                .semantics { contentDescription = if (signedIn) "Account, signed in and syncing" else "Sign in to sync" },
+                .semantics {
+                    contentDescription = when {
+                        !signedIn -> "Sign in to sync"
+                        synced -> "Account, signed in and syncing"
+                        else -> "Account, signed in but not syncing right now"
+                    }
+                },
             contentAlignment = Alignment.Center,
         ) {
             Mascot(Mood.HAPPY, size = 34.dp, tappable = false)
@@ -143,21 +166,21 @@ private fun StatBar(
                         .size(14.dp)
                         .background(scheme.surface, CircleShape)
                         .padding(2.dp)
-                        .background(scheme.tertiary, CircleShape)
+                        .background(if (synced) scheme.tertiary else CoinGold, CircleShape) // green synced, gold not
                 )
             }
         }
         Row(Modifier.weight(1f), horizontalArrangement = Arrangement.SpaceEvenly) {
             StatItem(
-                "🔥", "$streak",
+                R.drawable.px_stat_streak, "$streak",
                 if (streak > 0) Color(0xFFFF9600) else scheme.onSurfaceVariant,
                 "$streak day logging streak",
             )
-            StatItem("🪙", "$leftPercent%", CoinGold, "$leftPercent percent of budget left")
-            StatItem("🏆", "$wins", Mint, "$wins challenges won")
+            StatItem(R.drawable.px_stat_coin, "$leftPercent%", CoinGold, "$leftPercent percent of budget left")
+            StatItem(R.drawable.px_stat_trophy, "$wins", Mint, "$wins challenges won")
         }
         IconButton(onClick = onHelp, modifier = Modifier.semantics { contentDescription = "Help" }) {
-            Text("?", fontWeight = FontWeight.Black, fontSize = 22.sp, color = scheme.onSurfaceVariant)
+            PixelIcon(R.drawable.px_help, contentDescription = null, tint = scheme.onSurfaceVariant)
         }
     }
     if (!signedIn) {
@@ -169,7 +192,7 @@ private fun StatBar(
 
 /** The green "Remaining budget" card, as a 3D tilt card with the goblin floating above it. */
 @Composable
-private fun RemainingCard(remaining: Double, spent: Double, budget: Double) {
+private fun RemainingCard(remaining: Double, spent: Double, budget: Double, topUps: Double, resets: String, periodName: String, onAddMoney: () -> Unit) {
     TiltCard(
         background = Brush.linearGradient(listOf(Mint, MintDark)),
         shape = CardShape,
@@ -210,9 +233,129 @@ private fun RemainingCard(remaining: Double, spent: Double, budget: Double) {
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.depth(30.dp),
                 )
+                if (topUps > 0) {
+                    Text(
+                        "Includes +${money.format(topUps)} added this $periodName",
+                        color = Color.White.copy(alpha = 0.8f),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.depth(30.dp),
+                    )
+                }
+                Text(resets, color = Color.White.copy(alpha = 0.8f), fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.depth(30.dp))
+                Spacer(Modifier.height(14.dp))
+                // A one-time top-up for this period only.
+                Chunky(
+                    face = Color.White,
+                    edge = Color.White.copy(alpha = 0.55f),
+                    onClick = onAddMoney,
+                    modifier = Modifier.depth(30.dp).height(44.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        PixelIcon(R.drawable.px_nav_add, contentDescription = null, tint = MintDark, size = 16.dp)
+                        Spacer(Modifier.width(8.dp))
+                        Text("ADD MONEY", color = MintDark, fontWeight = FontWeight.ExtraBold, letterSpacing = 0.8.sp, fontSize = 14.sp)
+                    }
+                }
             }
         }
     }
+}
+
+/** Money in, kept apart from the budget: this month's income, what went into the budget, what's left after spending. */
+@Composable
+private fun IncomeSection(month: List<Transaction>, spent: Double, periodName: String) {
+    val income = month.filter { it.isIncome }
+    val total = income.sumOf { it.amount }
+    val toBudget = income.filter { it.toBudget }.sumOf { it.amount }
+    val kept = total - spent
+    SectionTitle("Income")
+    Panel {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier.size(44.dp).background(MaterialTheme.colorScheme.tertiary, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) { PixelIcon(R.drawable.px_income, contentDescription = null, tint = Color.White) }
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text("MONEY IN THIS ${periodName.uppercase()}", fontSize = 12.sp, letterSpacing = 1.sp, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("+" + money.format(total), fontSize = 26.sp, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.tertiary)
+            }
+        }
+        HorizontalDivider(Modifier.padding(vertical = 14.dp), thickness = 2.dp, color = MaterialTheme.colorScheme.outlineVariant)
+        Row {
+            DayTotal("ADDED TO BUDGET", toBudget, CoinGold, Modifier.weight(1f))
+            DayTotal(
+                if (kept >= 0) "KEPT AFTER SPENDING" else "SPENT BEYOND INCOME",
+                kotlin.math.abs(kept),
+                if (kept >= 0) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary,
+                Modifier.weight(1f),
+            )
+        }
+        if (income.isEmpty()) {
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "No income logged yet. Tap + and choose Income.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+}
+
+/** A one-time top-up: adds money to this month's budget only, so Remaining goes up straight away. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun AddMoneyDialog(periodName: String, onDismiss: () -> Unit, onSave: (Double, String) -> Unit) {
+    var text by rememberSaveable { mutableStateOf("") }
+    var note by rememberSaveable { mutableStateOf("") }
+    val amount = text.toDoubleOrNull()?.takeIf { it > 0 }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Mascot(Mood.INVESTING, size = 88.dp) },
+        title = { Text("Add money to this $periodName") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    "A one-time boost for this $periodName's budget. The next one starts fresh.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it.filter { c -> c.isDigit() || c == '.' } },
+                    label = { Text("Amount") },
+                    prefix = { Text(money.currency?.symbol ?: "") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(16.dp),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(100, 200, 500, 1000).forEach { preset ->
+                        Tile(
+                            selected = amount == preset.toDouble(),
+                            onClick = { text = preset.toString() },
+                            modifier = Modifier.width(76.dp).height(48.dp),
+                        ) { Text(money.format(preset).substringBefore('.'), fontWeight = FontWeight.ExtraBold, fontSize = 13.sp) }
+                    }
+                }
+                OutlinedTextField(
+                    value = note,
+                    onValueChange = { note = it },
+                    label = { Text("Where's it from? (optional)") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = { TextButton(enabled = amount != null, onClick = { amount?.let { onSave(it, note.trim()) } }) { Text("ADD", fontWeight = FontWeight.ExtraBold) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("CANCEL", fontWeight = FontWeight.ExtraBold) } },
+    )
 }
 
 /** Spending for each of the last 7 days as chunky rounded bars (today in coral), plus today vs yesterday. */
@@ -311,12 +454,12 @@ private fun TransactionRow(t: Transaction, onDelete: () -> Unit) {
             Box(
                 Modifier.size(44.dp).background(MaterialTheme.colorScheme.tertiary, CircleShape),
                 contentAlignment = Alignment.Center,
-            ) { Text("💰", fontSize = 20.sp) }
+            ) { PixelIcon(R.drawable.px_income, contentDescription = null, tint = Color.White) }
         }
         Column(Modifier.weight(1f).padding(horizontal = 14.dp)) {
             Text(t.title, fontWeight = FontWeight.ExtraBold, maxLines = 1)
             Text(
-                "${t.category?.label ?: "Income"} · ${dayLabel(t.date)}",
+                "${t.category?.label ?: if (t.toBudget) "Budget top-up" else "Income"} · ${dayLabel(t.date)}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -328,7 +471,7 @@ private fun TransactionRow(t: Transaction, onDelete: () -> Unit) {
         )
         IconButton(onClick = onDelete) {
             Icon(
-                painterResource(R.drawable.ic_close),
+                painterResource(R.drawable.px_close),
                 contentDescription = "Delete ${t.title}",
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(18.dp),
@@ -346,19 +489,19 @@ private fun dayLabel(millis: Long): String = when {
 /** Set the monthly budget: type an amount or pick a preset tile. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun BudgetDialog(current: Double, onDismiss: () -> Unit, onSave: (Double) -> Unit) {
+private fun BudgetDialog(current: Double, title: String, onDismiss: () -> Unit, onSave: (Double) -> Unit) {
     var text by rememberSaveable { mutableStateOf(current.toLong().toString()) }
     val amount = text.toDoubleOrNull()?.takeIf { it > 0 }
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Mascot(Mood.GUARDING, size = 88.dp) },
-        title = { Text("Budget for $monthName") },
+        title = { Text(title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
                     value = text,
                     onValueChange = { text = it.filter { c -> c.isDigit() || c == '.' } },
-                    label = { Text("Monthly budget") },
+                    label = { Text("Budget per period") },
                     prefix = { Text(money.currency?.symbol ?: "") },
                     singleLine = true,
                     shape = RoundedCornerShape(16.dp),

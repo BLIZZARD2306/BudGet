@@ -74,7 +74,7 @@ fun StatsScreen(state: BudgetState) {
                     Column {
                         Text("Goblin's report", fontWeight = FontWeight.Bold, modifier = Modifier.semantics { heading() })
                         Text(
-                            "${top.emoji} ${top.label} takes the biggest bite: ${money.format(value)}, " +
+                            "${top.label} takes the biggest bite: ${money.format(value)}, " +
                                 "${(value / spent * 100).roundToInt()}% of your spending this month.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,

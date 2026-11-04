@@ -1,11 +1,18 @@
 package com.budgetgoblin.app.data
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.FirebaseFirestoreException
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.MetadataChanges
 import com.google.firebase.firestore.SetOptions
 import com.google.firebase.firestore.Source
+
+/** SYNCED: the account answered. BLOCKED: it refused this phone (e.g. App Check). OFFLINE: unreachable. */
+enum class SyncStatus { CONNECTING, SYNCED, BLOCKED, OFFLINE }
 
 /**
  * Mirrors [BudgetState] to Firestore under users/{uid}: one document per transaction and per
@@ -16,6 +23,19 @@ class CloudSync(private val state: BudgetState) {
     private val db get() = FirebaseFirestore.getInstance()
     private var listeners = emptyList<ListenerRegistration>()
     private var uid: String? = null
+
+    /** What's really happening with sync, for the account screen and the avatar dot. */
+    var status by mutableStateOf(SyncStatus.CONNECTING)
+        private set
+
+    /** Records why the account couldn't be reached (a refused request means this phone isn't allowed). */
+    fun markFailed(e: Exception) {
+        status = if ((e as? FirebaseFirestoreException)?.code == FirebaseFirestoreException.Code.PERMISSION_DENIED) {
+            SyncStatus.BLOCKED
+        } else {
+            SyncStatus.OFFLINE
+        }
+    }
 
     private fun user(uid: String) = db.collection("users").document(uid)
     private fun transactions(uid: String) = user(uid).collection("transactions")
@@ -33,10 +53,13 @@ class CloudSync(private val state: BudgetState) {
         state.cloud = this
         var transactionsLive = false
         var challengesLive = false
+        status = SyncStatus.CONNECTING
         listeners = listOf(
-            transactions(uid).addSnapshotListener(MetadataChanges.INCLUDE) { snap, _ ->
+            transactions(uid).addSnapshotListener(MetadataChanges.INCLUDE) { snap, e ->
+                if (e != null) return@addSnapshotListener markFailed(e)
                 if (snap == null) return@addSnapshotListener
                 transactionsLive = transactionsLive || !snap.metadata.isFromCache
+                if (!snap.metadata.isFromCache) status = SyncStatus.SYNCED
                 if (transactionsLive) state.applyTransactions(snap.documents.mapNotNull(::toTransaction))
             },
             challenges(uid).addSnapshotListener(MetadataChanges.INCLUDE) { snap, _ ->
@@ -46,6 +69,7 @@ class CloudSync(private val state: BudgetState) {
             },
             user(uid).addSnapshotListener { snap, _ ->
                 snap?.getDouble(FIELD_BUDGET)?.let(state::applyBudget)
+                snap?.let(::toSchedule)?.let(state::applySchedule)
             },
         )
     }
@@ -55,6 +79,7 @@ class CloudSync(private val state: BudgetState) {
         listeners = emptyList()
         uid = null
         state.cloud = null
+        status = SyncStatus.CONNECTING
     }
 
     /** Asks the server (never the offline cache, which may just be empty); throws if it can't be reached. */
@@ -65,7 +90,7 @@ class CloudSync(private val state: BudgetState) {
         val batch = db.batch()
         state.transactions.forEach { batch.set(transactions(uid).document(it.id.toString()), fromTransaction(it)) }
         state.challenges.forEach { batch.set(challenges(uid).document(it.startedAt.toString()), fromChallenge(it)) }
-        batch.set(user(uid), mapOf(FIELD_BUDGET to state.monthlyBudget), SetOptions.merge())
+        batch.set(user(uid), mapOf(FIELD_BUDGET to state.monthlyBudget) + fromSchedule(state.schedule), SetOptions.merge())
         batch.commit().await()
     }
 
@@ -82,6 +107,15 @@ class CloudSync(private val state: BudgetState) {
     fun remove(t: Transaction) { uid?.let { transactions(it).document(t.id.toString()).delete() } }
     fun put(c: Challenge) { uid?.let { challenges(it).document(c.startedAt.toString()).set(fromChallenge(c)) } }
     fun putBudget(amount: Double) { uid?.let { user(it).set(mapOf(FIELD_BUDGET to amount), SetOptions.merge()) } }
+    fun putSchedule(s: PaySchedule) { uid?.let { user(it).set(fromSchedule(s), SetOptions.merge()) } }
+
+    private fun fromSchedule(s: PaySchedule) = mapOf("payCycle" to s.cycle.name, "payWeekStart" to s.weekStart, "payAnchor" to s.anchor)
+
+    /** The pay schedule saved on the account, or null if none was ever set (older accounts). */
+    private fun toSchedule(d: DocumentSnapshot): PaySchedule? {
+        val cycle = PayCycle.entries.firstOrNull { it.name == d.getString("payCycle") } ?: return null
+        return PaySchedule(cycle, (d.getLong("payWeekStart") ?: 2L).toInt(), d.getLong("payAnchor") ?: 0L)
+    }
 
     private fun fromTransaction(t: Transaction) = mapOf(
         "title" to t.title,
@@ -89,6 +123,7 @@ class CloudSync(private val state: BudgetState) {
         "isIncome" to t.isIncome,
         "category" to t.category?.name,
         "date" to t.date,
+        "toBudget" to t.toBudget,
     )
 
     private fun toTransaction(d: DocumentSnapshot): Transaction? = Transaction(
@@ -98,6 +133,7 @@ class CloudSync(private val state: BudgetState) {
         isIncome = d.getBoolean("isIncome") ?: false,
         category = d.getString("category")?.let { name -> Category.entries.firstOrNull { it.name == name } },
         date = d.getLong("date") ?: return null,
+        toBudget = d.getBoolean("toBudget") ?: false,
     )
 
     private fun fromChallenge(c: Challenge) = mapOf(

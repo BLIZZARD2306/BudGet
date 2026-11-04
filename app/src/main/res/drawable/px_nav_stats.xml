@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- BudGet pixel icon: nav_stats (16x16 grid). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="16"
+    android:viewportHeight="16">
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M9,0h2v1h-2zM5,1h3v1h-3zM9,1h4v1h-4zM3,2h5v1h-5zM9,2h5v1h-5zM2,3h6v1h-6zM9,3h6v1h-6zM2,4h6v1h-6zM9,4h6v1h-6zM1,5h7v1h-7zM9,5h7v1h-7zM1,6h7v1h-7zM9,6h7v1h-7zM1,7h7v1h-7zM1,8h14v1h-14zM1,9h14v1h-14zM1,10h14v1h-14zM2,11h12v1h-12zM2,12h12v1h-12zM3,13h10v1h-10zM5,14h6v1h-6z" />
+</vector>

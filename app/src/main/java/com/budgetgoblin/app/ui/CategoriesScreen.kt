@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -32,8 +33,10 @@ import com.budgetgoblin.app.ui.theme.CoinGold
 import kotlin.math.roundToInt
 
 @Composable
-fun CategoriesScreen(state: BudgetState) {
+fun CategoriesScreen(state: BudgetState, scrollToTop: Int = 0) {
     val scroll = rememberScrollState()
+    // Tapping Categories again in the nav bar brings the card stack back to the top.
+    LaunchedEffect(scrollToTop) { if (scrollToTop > 0) scroll.animateScrollTo(0) }
     val month = state.thisMonth
     val spentBy = Category.entries.associateWith { c -> month.filter { it.category == c }.sumOf { it.amount } }
     val top = spentBy.entries.sortedByDescending { it.value }.take(4)

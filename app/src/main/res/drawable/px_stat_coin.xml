@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- BudGet pixel icon: stat_coin (16x16 grid). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="16"
+    android:viewportHeight="16">
+    <path
+        android:fillColor="#FFF2B33D"
+        android:pathData="M5,1h6v1h-6zM4,2h8v1h-8zM3,3h2v1h-2zM11,3h2v1h-2zM2,4h2v1h-2zM6,4h4v1h-4zM12,4h2v1h-2zM1,5h2v1h-2zM5,5h6v1h-6zM13,5h2v1h-2zM1,6h2v1h-2zM4,6h8v1h-8zM13,6h2v1h-2zM1,7h2v1h-2zM4,7h8v1h-8zM13,7h2v1h-2zM1,8h2v1h-2zM4,8h8v1h-8zM13,8h2v1h-2zM1,9h2v1h-2zM4,9h8v1h-8zM13,9h2v1h-2zM1,10h2v1h-2zM5,10h6v1h-6zM13,10h2v1h-2zM2,11h2v1h-2zM6,11h4v1h-4zM12,11h2v1h-2zM3,12h2v1h-2zM11,12h2v1h-2zM4,13h8v1h-8zM5,14h6v1h-6z" />
+    <path
+        android:fillColor="#FFB07014"
+        android:pathData="M5,3h6v1h-6zM4,4h2v1h-2zM10,4h2v1h-2zM3,5h2v1h-2zM11,5h2v1h-2zM3,6h1v1h-1zM12,6h1v1h-1zM3,7h1v1h-1zM12,7h1v1h-1zM3,8h1v1h-1zM12,8h1v1h-1zM3,9h1v1h-1zM12,9h1v1h-1zM3,10h2v1h-2zM11,10h2v1h-2zM4,11h2v1h-2zM10,11h2v1h-2zM5,12h6v1h-6z" />
+</vector>

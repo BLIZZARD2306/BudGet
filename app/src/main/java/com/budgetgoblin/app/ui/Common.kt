@@ -73,14 +73,14 @@ import androidx.compose.ui.unit.sp
 import com.budgetgoblin.app.data.Category
 import com.budgetgoblin.app.ui.theme.CoinGold
 import com.budgetgoblin.app.ui.theme.lip
-import kotlinx.coroutines.delay
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.Date
+import kotlinx.coroutines.delay
 
 val money: NumberFormat = NumberFormat.getCurrencyInstance()
 val CardShape = RoundedCornerShape(24.dp)
-val PanelShape = RoundedCornerShape(16.dp)
+val PanelShape: Shape = PixelShape()
 val monthName: String get() = SimpleDateFormat("MMMM").format(Date())
 
 /** Category colours: flat and bright, like the kit's icons. Pairs give the stacking cards a gentle gradient. */
@@ -214,7 +214,7 @@ fun Tile(
     )
 }
 
-/** A category's emoji on a flat coloured circle. */
+/** A category's pixel icon, white on a flat coloured circle. */
 @Composable
 fun CategoryBadge(category: Category, size: Dp = 44.dp, selected: Boolean = false) {
     Box(
@@ -222,7 +222,7 @@ fun CategoryBadge(category: Category, size: Dp = 44.dp, selected: Boolean = fals
             .size(size)
             .background(if (selected) Color.White.copy(alpha = 0.3f) else category.color(), CircleShape),
         contentAlignment = Alignment.Center,
-    ) { Text(category.emoji, fontSize = (size.value * 0.45f).sp) }
+    ) { PixelIcon(category.icon(), contentDescription = null, tint = Color.White, size = size * 0.55f) }
 }
 
 /** The big chunky button: uppercase, heavy, with a darker lip that presses down. */
@@ -346,14 +346,14 @@ fun SectionBanner(
     }
 }
 
-/** One item in the top stat row: a small icon (emoji) and a bold coloured number. */
+/** One item in the top stat row: a small pixel icon and a bold coloured number. */
 @Composable
-fun StatItem(icon: String, value: String, color: Color, description: String, modifier: Modifier = Modifier) {
+fun StatItem(icon: Int, value: String, color: Color, description: String, modifier: Modifier = Modifier) {
     Row(
         modifier.semantics(mergeDescendants = true) { contentDescription = description },
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(icon, fontSize = 22.sp)
+        PixelImage(icon, contentDescription = null, size = 24.dp)
         Spacer(Modifier.width(6.dp))
         Text(value, color = color, fontWeight = FontWeight.ExtraBold, fontSize = 17.sp)
     }

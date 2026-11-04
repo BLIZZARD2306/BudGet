@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- BudGet pixel icon: cat_fun (16x16 grid). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="16"
+    android:viewportHeight="16">
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M3,3h10v1h-10zM2,4h12v1h-12zM1,5h3v1h-3zM5,5h6v1h-6zM12,5h3v1h-3zM1,6h2v1h-2zM6,6h4v1h-4zM11,6h1v1h-1zM13,6h2v1h-2zM1,7h3v1h-3zM5,7h6v1h-6zM12,7h3v1h-3zM1,8h14v1h-14zM1,9h6v1h-6zM9,9h6v1h-6zM1,10h5v1h-5zM10,10h5v1h-5zM2,11h3v1h-3zM11,11h3v1h-3z" />
+</vector>

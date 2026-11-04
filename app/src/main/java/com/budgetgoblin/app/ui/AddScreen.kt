@@ -62,6 +62,7 @@ fun AddScreen(onCancel: () -> Unit, onSave: (Transaction) -> Unit) {
     var amountText by rememberSaveable { mutableStateOf("") }
     var title by rememberSaveable { mutableStateOf("") }
     var split by rememberSaveable { mutableStateOf(false) }
+    var toBudget by rememberSaveable { mutableStateOf(false) }
     var people by rememberSaveable { mutableIntStateOf(2) }
     val total = amountText.toDoubleOrNull()?.takeIf { it > 0 }
     val splitting = split && !isIncome
@@ -76,7 +77,7 @@ fun AddScreen(onCancel: () -> Unit, onSave: (Transaction) -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = onCancel) {
-                Icon(painterResource(R.drawable.ic_close), "Close", tint = scheme.onSurfaceVariant, modifier = Modifier.size(26.dp))
+                Icon(painterResource(R.drawable.px_close), "Close", tint = scheme.onSurfaceVariant, modifier = Modifier.size(26.dp))
             }
             ChunkyProgress(progress, color = scheme.tertiary, modifier = Modifier.weight(1f))
         }
@@ -111,9 +112,14 @@ fun AddScreen(onCancel: () -> Unit, onSave: (Transaction) -> Unit) {
 
             Spacer(Modifier.height(20.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                listOf(false to "💸  Expense", true to "💰  Income").forEach { (income, label) ->
-                    Tile(isIncome == income, onClick = { isIncome = income }, modifier = Modifier.weight(1f).height(60.dp)) {
-                        Text(label, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
+                listOf(Triple(false, "Expense", R.drawable.px_money_out), Triple(true, "Income", R.drawable.px_money_in)).forEach { (income, label, icon) ->
+                    val selected = isIncome == income
+                    Tile(selected, onClick = { isIncome = income }, modifier = Modifier.weight(1f).height(60.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            PixelIcon(icon, contentDescription = null, tint = if (selected) scheme.primary else scheme.onSurfaceVariant, size = 22.dp)
+                            Spacer(Modifier.width(10.dp))
+                            Text(label, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
+                        }
                     }
                 }
             }
@@ -181,6 +187,23 @@ fun AddScreen(onCancel: () -> Unit, onSave: (Transaction) -> Unit) {
                 modifier = Modifier.fillMaxWidth(),
             )
 
+            if (isIncome) {
+                Spacer(Modifier.height(16.dp))
+                Panel(padding = 16.dp) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Add to my current budget", fontWeight = FontWeight.ExtraBold)
+                            Text(
+                                "Raises Remaining until your next payday",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = scheme.onSurfaceVariant,
+                            )
+                        }
+                        Switch(checked = toBudget, onCheckedChange = { toBudget = it })
+                    }
+                }
+            }
+
             if (!isIncome) {
                 Spacer(Modifier.height(16.dp))
                 Panel(padding = 16.dp) {
@@ -236,6 +259,7 @@ fun AddScreen(onCancel: () -> Unit, onSave: (Transaction) -> Unit) {
                             amount = value,
                             isIncome = isIncome,
                             category = if (isIncome) null else category,
+                            toBudget = isIncome && toBudget,
                         )
                     )
                 },

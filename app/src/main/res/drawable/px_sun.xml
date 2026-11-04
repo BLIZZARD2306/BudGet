@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- BudGet pixel icon: sun (16x16 grid). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="16"
+    android:viewportHeight="16">
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M7,0h2v1h-2zM7,1h2v1h-2zM2,2h1v1h-1zM13,2h1v1h-1zM3,3h1v1h-1zM12,3h1v1h-1zM7,4h2v1h-2zM5,5h6v1h-6zM5,6h6v1h-6zM0,7h2v1h-2zM4,7h8v1h-8zM14,7h2v1h-2zM0,8h2v1h-2zM4,8h8v1h-8zM14,8h2v1h-2zM5,9h6v1h-6zM5,10h6v1h-6zM7,11h2v1h-2zM3,12h1v1h-1zM12,12h1v1h-1zM2,13h1v1h-1zM13,13h1v1h-1zM7,14h2v1h-2zM7,15h2v1h-2z" />
+</vector>

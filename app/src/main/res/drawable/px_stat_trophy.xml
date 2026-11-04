@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- BudGet pixel icon: stat_trophy (16x16 grid). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="16"
+    android:viewportHeight="16">
+    <path
+        android:fillColor="#FFF2B33D"
+        android:pathData="M2,1h12v1h-12zM1,2h2v1h-2zM5,2h7v1h-7zM13,2h2v1h-2zM1,3h1v1h-1zM5,3h7v1h-7zM14,3h1v1h-1zM1,4h1v1h-1zM5,4h7v1h-7zM14,4h1v1h-1zM1,5h2v1h-2zM4,5h8v1h-8zM13,5h2v1h-2zM2,6h12v1h-12zM4,7h8v1h-8zM5,8h6v1h-6zM6,9h4v1h-4zM7,10h2v1h-2zM7,11h2v1h-2zM5,12h6v1h-6z" />
+    <path
+        android:fillColor="#FFFFE896"
+        android:pathData="M4,2h1v1h-1zM4,3h1v1h-1zM4,4h1v1h-1z" />
+    <path
+        android:fillColor="#FFB07014"
+        android:pathData="M4,13h8v1h-8zM4,14h8v1h-8z" />
+</vector>

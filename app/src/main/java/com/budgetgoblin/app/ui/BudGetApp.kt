@@ -1,5 +1,6 @@
 package com.budgetgoblin.app.ui
 
+import com.budgetgoblin.app.data.SyncStatus
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.annotation.DrawableRes
@@ -35,6 +36,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -60,11 +62,11 @@ import com.google.firebase.auth.FirebaseAuthRecentLoginRequiredException
 import kotlinx.coroutines.launch
 
 enum class Tab(val label: String, @param:DrawableRes val icon: Int) {
-    HOME("Home", R.drawable.ic_nav_home),
-    CATEGORIES("Categories", R.drawable.ic_nav_categories),
-    ADD("Add", R.drawable.ic_add),
-    STATS("Stats", R.drawable.ic_nav_stats),
-    CHALLENGES("Challenges", R.drawable.ic_nav_challenges),
+    HOME("Home", R.drawable.px_nav_home),
+    CATEGORIES("Categories", R.drawable.px_nav_categories),
+    ADD("Add", R.drawable.px_nav_add),
+    STATS("Stats", R.drawable.px_nav_stats),
+    CHALLENGES("Challenges", R.drawable.px_nav_challenges),
 }
 
 @Composable
@@ -80,6 +82,7 @@ fun BudGetApp(
     var reaction by remember { mutableStateOf<Tip?>(null) }
     var showHelp by rememberSaveable { mutableStateOf(false) }
     var showAccount by rememberSaveable { mutableStateOf(false) }
+    var categoriesToTop by remember { mutableIntStateOf(0) } // bumped when Categories is tapped again
     var uploadOffer by remember { mutableStateOf<String?>(null) }
     var confirmLink by remember { mutableStateOf<String?>(null) }
     val sync = remember { CloudSync(state) }
@@ -136,7 +139,8 @@ fun BudGetApp(
         if (state.syncedUid == uid) return@LaunchedEffect sync.start(uid)
         val accountHasData = try {
             sync.hasData(uid)
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            sync.markFailed(e)
             reaction = Tip(Mood.ALERT, "Couldn't reach your account yet. Your entries are safe on this phone, and I'll try again next time.")
             return@LaunchedEffect
         }
@@ -148,6 +152,16 @@ fun BudGetApp(
         if (hasLocal && !upload(uid)) return@LaunchedEffect
         reaction = Tip(Mood.CELEBRATE, "Signed in! Your budget now syncs across your phones.")
         startSync(uid)
+    }
+
+    // The link was opened on another device (like a computer): its sign-in page hands it over here.
+    LaunchedEffect(auth.pendingHandoff, auth.user?.uid) {
+        if (auth.user != null || auth.pendingHandoff == null) return@LaunchedEffect
+        val link = auth.awaitHandoff() ?: return@LaunchedEffect
+        val email = auth.pendingEmail ?: return@LaunchedEffect
+        runCatching { auth.finishEmailLink(email, link) }
+            .onFailure { reaction = Tip(Mood.SAD, "That sign-in link didn't work. It may have expired, so send a new one.") }
+        showAccount = false
     }
 
     // A tapped email link opens the app; finish signing in with the address it was sent to.
@@ -174,19 +188,22 @@ fun BudGetApp(
                     onClose = { showAccount = false },
                     onSignOut = ::signOut,
                     onDeleteAccount = ::deleteAccount,
+                    syncStatus = sync.status,
+                    schedule = state.schedule,
+                    onSchedule = state::changeSchedule,
                     themeMode = themeMode,
                     onThemeMode = onThemeMode,
                 )
-                Tab.HOME -> HomeScreen(state, signedIn = auth.user != null, onHelp = { showHelp = true }, onAccount = { showAccount = true })
-                Tab.CATEGORIES -> CategoriesScreen(state)
+                Tab.HOME -> HomeScreen(state, signedIn = auth.user != null, synced = sync.status == SyncStatus.SYNCED, onHelp = { showHelp = true }, onAccount = { showAccount = true })
+                Tab.CATEGORIES -> CategoriesScreen(state, scrollToTop = categoriesToTop)
                 Tab.ADD -> AddScreen(
                     onCancel = { tab = Tab.HOME },
                     onSave = { t ->
-                        val before = state.thisMonth
+                        val before = state.thisPeriod
                         val broken = state.add(t)
                         reaction = broken.firstOrNull()
                             ?.let { Tip(Mood.REGRETFUL, "Oops! That broke your ${it.type.title} challenge.") }
-                            ?: reactionTo(t, before, state.monthlyBudget)
+                            ?: reactionTo(t, before, state.budgetThisPeriod)
                         tab = Tab.HOME
                     },
                 )
@@ -205,7 +222,10 @@ fun BudGetApp(
         if (!showAccount && tab != Tab.ADD) {
             BottomBar(
                 current = tab,
-                onSelect = { tab = it },
+                onSelect = {
+                    if (it == Tab.CATEGORIES && tab == Tab.CATEGORIES) categoriesToTop++
+                    tab = it
+                },
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
         }
@@ -321,8 +341,8 @@ private fun NavItem(tab: Tab, current: Tab, onSelect: (Tab) -> Unit) {
             .then(
                 if (selected) {
                     Modifier
-                        .border(2.dp, scheme.primary.copy(alpha = 0.6f), RoundedCornerShape(14.dp))
-                        .background(scheme.primaryContainer.copy(alpha = 0.5f), RoundedCornerShape(14.dp))
+                        .border(2.dp, scheme.primary.copy(alpha = 0.6f), PixelShape())
+                        .background(scheme.primaryContainer.copy(alpha = 0.5f), PixelShape())
                 } else Modifier
             )
             .selectable(selected = selected, role = Role.Tab, onClick = { onSelect(tab) })
@@ -345,11 +365,10 @@ private fun AddButton(onClick: () -> Unit) {
     Chunky(
         face = coral,
         edge = coral.lip(),
-        shape = RoundedCornerShape(14.dp),
         onClick = onClick,
         modifier = Modifier.size(52.dp).semantics { contentDescription = "Add transaction" },
         contentAlignment = Alignment.Center,
     ) {
-        Icon(painterResource(R.drawable.ic_add), contentDescription = null, tint = Color.White, modifier = Modifier.size(28.dp))
+        Icon(painterResource(R.drawable.px_nav_add), contentDescription = null, tint = Color.White, modifier = Modifier.size(28.dp))
     }
 }

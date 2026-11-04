@@ -3,6 +3,7 @@ package com.budgetgoblin.app.data
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import java.util.concurrent.TimeUnit
 
@@ -20,7 +21,12 @@ class BudgetState(private val store: BudgetStore) {
         if (store.hasSavedData) store.saveTransactions(this)
     }
     val challenges = mutableStateListOf<Challenge>().apply { addAll(store.loadChallenges()) }
+    /** The budget for one pay period (a month, a week, ... per [schedule]). Stored under its old name. */
     var monthlyBudget by mutableDoubleStateOf(store.loadBudget())
+        private set
+
+    /** When you get paid; the budget and Remaining reset at the start of each period. */
+    var schedule by mutableStateOf(store.loadSchedule())
         private set
 
     /** The account this phone's data last synced with, so we only offer an upload once. */
@@ -32,6 +38,16 @@ class BudgetState(private val store: BudgetStore) {
     val hasOwnData get() = store.hasSavedData
 
     val thisMonth: List<Transaction> get() = transactions.filter { isThisMonth(it.date) }
+
+    /** The current pay period, and what happened in it. */
+    val period: Period get() = schedule.periodAt()
+    val thisPeriod: List<Transaction> get() = period.let { p -> transactions.filter { it.date in p } }
+
+    /** One-time top-ups added to this period's budget. */
+    val topUps: Double get() = thisPeriod.filter { it.isIncome && it.toBudget }.sumOf { it.amount }
+
+    /** This period's spending budget: the per-period budget plus any top-ups. */
+    val budgetThisPeriod: Double get() = monthlyBudget + topUps
     val activeChallenges get() = challenges.filter { it.status == ChallengeStatus.ACTIVE }
     val challengesWon get() = challenges.count { it.status == ChallengeStatus.COMPLETED }
 
@@ -70,6 +86,17 @@ class BudgetState(private val store: BudgetStore) {
         monthlyBudget = amount
         store.saveBudget(amount)
         cloud?.putBudget(amount)
+    }
+
+    fun changeSchedule(s: PaySchedule) {
+        schedule = s
+        store.saveSchedule(s)
+        cloud?.putSchedule(s)
+    }
+
+    fun applySchedule(s: PaySchedule) {
+        schedule = s
+        store.saveSchedule(s)
     }
 
     fun start(type: ChallengeType, now: Long = System.currentTimeMillis()) {
@@ -111,6 +138,7 @@ class BudgetState(private val store: BudgetStore) {
         applyTransactions(emptyList())
         applyChallenges(emptyList())
         applyBudget(BudgetStore.DEFAULT_BUDGET.toDouble())
+        applySchedule(PaySchedule())
         syncedUid = null
     }
 

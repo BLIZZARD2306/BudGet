@@ -1,11 +1,18 @@
 package com.budgetgoblin.app.ui
 
+import java.util.Locale
+import java.util.Date
+import java.util.Calendar
+import java.text.SimpleDateFormat
+import com.budgetgoblin.app.data.PaySchedule
+import com.budgetgoblin.app.data.PayCycle
+import com.budgetgoblin.app.data.SyncStatus
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.util.Patterns
-import androidx.compose.foundation.BorderStroke
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,10 +26,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.IconButton
@@ -44,8 +51,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -55,10 +62,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.credentials.exceptions.GetCredentialCancellationException
 import androidx.credentials.exceptions.NoCredentialException
+import com.budgetgoblin.app.R
 import com.budgetgoblin.app.data.Auth
+import com.budgetgoblin.app.ui.theme.CoinGold
+import com.budgetgoblin.app.ui.theme.ThemeMode
 import com.google.firebase.FirebaseTooManyRequestsException
 import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
-import com.budgetgoblin.app.ui.theme.ThemeMode
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -70,6 +79,9 @@ fun AccountScreen(
     onClose: () -> Unit,
     onSignOut: () -> Unit,
     onDeleteAccount: () -> Unit,
+    syncStatus: SyncStatus,
+    schedule: PaySchedule,
+    onSchedule: (PaySchedule) -> Unit,
     themeMode: ThemeMode,
     onThemeMode: (ThemeMode) -> Unit,
 ) {
@@ -78,9 +90,10 @@ fun AccountScreen(
         if (user == null) {
             SignedOut(auth, onMessage, onClose)
         } else {
-            ScreenTitle("Your account", "Keep your budget on every phone")
-            SignedIn(auth, onSignOut, onDeleteAccount)
+            BackTitle("Your account", onBack = onClose)
+            SignedIn(auth, syncStatus, onSignOut, onDeleteAccount)
         }
+        PaySchedulePanel(schedule, onSchedule)
         AppearancePanel(themeMode, onThemeMode)
     }
 }
@@ -121,7 +134,7 @@ private fun ColumnScope.SignedOut(auth: Auth, onMessage: (Tip) -> Unit, onClose:
 
     when (step) {
         EmailStep.CHOOSE -> {
-            ScreenTitle("Sign in", "Keep your budget on every phone")
+            BackTitle("Sign in", onBack = onClose)
             ChooseMethod(
                 available = auth.available,
                 busy = busy,
@@ -188,7 +201,7 @@ private fun sendError(e: Exception) = when (e) {
 private fun BackTitle(title: String, onBack: () -> Unit) {
     Box(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp), contentAlignment = Alignment.Center) {
         IconButton(onClick = onBack, modifier = Modifier.align(Alignment.CenterStart)) {
-            Text("←", fontSize = 22.sp, modifier = Modifier.semantics { contentDescription = "Back" })
+            PixelIcon(R.drawable.px_back, contentDescription = "Back", tint = MaterialTheme.colorScheme.onSurface)
         }
         Text(
             title,
@@ -234,7 +247,7 @@ private fun ChooseMethod(available: Boolean, busy: Boolean, onGoogle: () -> Unit
         Spacer(Modifier.height(20.dp))
         OutlineButton("Continue with Google", leading = "G", enabled = available && !busy, onClick = onGoogle)
         Spacer(Modifier.height(12.dp))
-        OutlineButton("Continue with email", leading = "✉", enabled = available && !busy, onClick = onEmail)
+        OutlineButton("Continue with email", icon = R.drawable.px_mail, enabled = available && !busy, onClick = onEmail)
         if (busy) {
             Spacer(Modifier.height(12.dp))
             CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally))
@@ -309,8 +322,8 @@ private fun LinkSent(
             Text(email, fontWeight = FontWeight.SemiBold)
         }
         Spacer(Modifier.height(16.dp))
-        Step("1", "Open the email on this phone")
-        Step("2", "Tap the Sign in link")
+        Step("1", "Open the email here or on your computer")
+        Step("2", "Tap the Sign in link. This screen signs in by itself")
         Step("3", "Not there? Check Spam or Promotions. It can take a few minutes.")
         Spacer(Modifier.height(20.dp))
         PillButton("Open email app", modifier = Modifier.fillMaxWidth(), onClick = onOpenEmail)
@@ -339,22 +352,95 @@ private fun Step(number: String, text: String) {
 }
 
 @Composable
-private fun OutlineButton(text: String, leading: String? = null, enabled: Boolean, onClick: () -> Unit) {
+private fun OutlineButton(text: String, leading: String? = null, icon: Int? = null, enabled: Boolean, onClick: () -> Unit) {
     OutlinePillButton(
         text,
         onClick = onClick,
         enabled = enabled,
         modifier = Modifier.fillMaxWidth(),
-        leading = leading?.let {
-            {
-                Text(
-                    it,
-                    color = if (it == "G") Color(0xFF4285F4) else MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Black,
-                    fontSize = 20.sp,
-                )
-            }
+        leading = when {
+            icon != null -> { { PixelIcon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, size = 22.dp) } }
+            leading != null -> { { Text(leading, color = Color(0xFF4285F4), fontWeight = FontWeight.Black, fontSize = 20.sp) } }
+            else -> null
         },
+    )
+}
+
+/**
+ * Pay schedule: how often you get paid. The budget amount is per period, and Remaining resets on
+ * each payday. Weekly and every-2-weeks also pick the payday; every-2-weeks picks which week too.
+ */
+@Composable
+private fun PaySchedulePanel(schedule: PaySchedule, onChange: (PaySchedule) -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    SectionTitle("Pay schedule")
+    Text(
+        "How often do you get paid? Your budget is per pay period, and Remaining resets on each payday.",
+        style = MaterialTheme.typography.bodySmall,
+        color = scheme.onSurfaceVariant,
+    )
+    Spacer(Modifier.height(12.dp))
+    PayCycle.entries.chunked(2).forEach { row ->
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(bottom = 10.dp)) {
+            row.forEach { c ->
+                Tile(
+                    selected = c == schedule.cycle,
+                    onClick = { onChange(schedule.copy(cycle = c)) },
+                    modifier = Modifier.weight(1f).height(76.dp),
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(c.label.uppercase(), fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, letterSpacing = 0.6.sp)
+                        Text(c.detail, fontSize = 11.sp, color = scheme.onSurfaceVariant, textAlign = TextAlign.Center)
+                    }
+                }
+            }
+        }
+    }
+
+    if (schedule.cycle == PayCycle.WEEKLY || schedule.cycle == PayCycle.BIWEEKLY) {
+        Text("Payday", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 6.dp, bottom = 8.dp))
+        val days = listOf(
+            Calendar.MONDAY to "M", Calendar.TUESDAY to "T", Calendar.WEDNESDAY to "W", Calendar.THURSDAY to "T",
+            Calendar.FRIDAY to "F", Calendar.SATURDAY to "S", Calendar.SUNDAY to "S",
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            days.forEach { (d, letter) ->
+                Tile(
+                    selected = schedule.weekStart == d,
+                    onClick = {
+                        val last = PaySchedule.lastWeekday(System.currentTimeMillis(), d)
+                        onChange(schedule.copy(weekStart = d, anchor = last))
+                    },
+                    modifier = Modifier.weight(1f).height(48.dp),
+                ) { Text(letter, fontWeight = FontWeight.ExtraBold) }
+            }
+        }
+    }
+    if (schedule.cycle == PayCycle.BIWEEKLY) {
+        // Which week the last payday was: this one, or the one before.
+        val thisWeek = PaySchedule.lastWeekday(System.currentTimeMillis(), schedule.weekStart)
+        val lastWeek = thisWeek - 7L * 24 * 60 * 60 * 1000
+        val anchoredThisWeek = schedule.periodAt().start == thisWeek
+        Text("Your last payday was", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 14.dp, bottom = 8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            listOf(thisWeek to anchoredThisWeek, lastWeek to !anchoredThisWeek).forEach { (date, selected) ->
+                Tile(
+                    selected = selected,
+                    onClick = { onChange(schedule.copy(anchor = date)) },
+                    modifier = Modifier.weight(1f).height(52.dp),
+                ) { Text(SimpleDateFormat("EEE, MMM d", Locale.getDefault()).format(Date(date)), fontWeight = FontWeight.ExtraBold) }
+            }
+        }
+    }
+
+    val p = schedule.periodAt()
+    val fmt = SimpleDateFormat("MMM d", Locale.getDefault())
+    Spacer(Modifier.height(10.dp))
+    Text(
+        "This period: ${fmt.format(Date(p.start))} – ${fmt.format(Date(p.end - 1))} · ${schedule.resetLabel()}",
+        style = MaterialTheme.typography.bodySmall,
+        fontWeight = FontWeight.Bold,
+        color = scheme.primary,
     )
 }
 
@@ -370,13 +456,14 @@ private fun AppearancePanel(mode: ThemeMode, onMode: (ThemeMode) -> Unit) {
                 modifier = Modifier.weight(1f).height(84.dp),
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
+                    PixelIcon(
                         when (m) {
-                            ThemeMode.SYSTEM -> "📱"
-                            ThemeMode.LIGHT -> "☀️"
-                            ThemeMode.DARK -> "🌙"
+                            ThemeMode.SYSTEM -> R.drawable.px_phone
+                            ThemeMode.LIGHT -> R.drawable.px_sun
+                            ThemeMode.DARK -> R.drawable.px_moon
                         },
-                        fontSize = 22.sp,
+                        contentDescription = null,
+                        tint = if (m == ThemeMode.LIGHT) CoinGold else if (m == mode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(m.label.uppercase(), fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, letterSpacing = 0.6.sp)
                 }
@@ -390,7 +477,7 @@ private fun AppearancePanel(mode: ThemeMode, onMode: (ThemeMode) -> Unit) {
  * leaves the composition the moment the user is signed out, which would cancel its own coroutines.
  */
 @Composable
-private fun SignedIn(auth: Auth, onSignOut: () -> Unit, onDeleteAccount: () -> Unit) {
+private fun SignedIn(auth: Auth, syncStatus: SyncStatus, onSignOut: () -> Unit, onDeleteAccount: () -> Unit) {
     val user = auth.user ?: return
     var confirmDelete by rememberSaveable { mutableStateOf(false) }
 
@@ -408,13 +495,19 @@ private fun SignedIn(auth: Auth, onSignOut: () -> Unit, onDeleteAccount: () -> U
                 Text(user.email!!, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Spacer(Modifier.height(12.dp))
+            val (headline, detail, ok) = when (syncStatus) {
+                SyncStatus.SYNCED -> Triple("✓  Synced across your phones", "Changes you make offline upload as soon as you're back online.", true)
+                SyncStatus.CONNECTING -> Triple("Connecting to your account…", "Your entries are saved on this phone in the meantime.", false)
+                SyncStatus.OFFLINE -> Triple("Offline right now", "Your entries are saved on this phone and upload when you're back online.", false)
+                SyncStatus.BLOCKED -> Triple("This phone can't sync yet", "Your account refused this phone. If it's a test build, add its App Check debug token in Firebase.", false)
+            }
             Text(
-                "✓  Synced across your phones",
-                color = MaterialTheme.colorScheme.tertiary,
+                headline,
+                color = if (ok) MaterialTheme.colorScheme.tertiary else CoinGold,
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
-                "Changes you make offline upload as soon as you're back online.",
+                detail,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,

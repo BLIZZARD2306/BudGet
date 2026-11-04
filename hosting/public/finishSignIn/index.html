@@ -39,9 +39,13 @@
   <main>
     <img src="/mascot.png" alt="The Budget Goblin offering help">
     <h1>Finish signing in on your phone</h1>
-    <div class="desktop-only">
+    <div class="desktop-only" id="desktop">
       <p>This sign-in link only works in the BudGet app.</p>
       <p>Open the email on the phone where BudGet is installed and tap the link there.</p>
+    </div>
+    <div id="handed" hidden>
+      <p>Your phone is signing in now. Keep BudGet open on the "Check your email" screen.</p>
+      <p>You can close this tab.</p>
     </div>
     <div class="android-only">
       <p>Tap below to finish signing in to BudGet.</p>
@@ -50,6 +54,43 @@
     </div>
   </main>
   <script>
+    // Opened somewhere other than the phone that asked (like a computer)? Hand this link to that
+    // phone: it waits on handoff/<id> in the Realtime Database and signs itself in.
+    const q = new URLSearchParams(location.search);
+    const handoff = q.get("h");
+    const slot = "https://budget-4f990-default-rtdb.firebaseio.com/handoff/" + handoff + ".json";
+    const say = (title, ...lines) => {
+      document.querySelector("h1").textContent = title;
+      document.getElementById("desktop").hidden = true;
+      const box = document.getElementById("handed");
+      box.hidden = false;
+      box.innerHTML = lines.map((l) => "<p>" + l + "</p>").join("");
+    };
+    // The phone deletes the slot once it has signed in; that's our confirmation.
+    const waitForPhone = async () => {
+      for (let i = 0; i < 90; i++) {
+        await new Promise((r) => setTimeout(r, 2000));
+        const body = await fetch(slot).then((r) => r.json()).catch(() => undefined);
+        if (body === null) {
+          say("Signed in on your phone!", "You're all set. This tab will close itself.");
+          // Browsers only let a page close a tab it opened itself, so this may be refused.
+          setTimeout(() => window.close(), 1500);
+          setTimeout(() => say("Signed in on your phone!", "You're all set. You can close this tab."), 2500);
+          return;
+        }
+      }
+    };
+    if (handoff && q.get("oobCode") && /^[0-9a-f]{32}$/.test(handoff)) {
+      fetch(slot, {
+        method: "PUT",
+        body: JSON.stringify({ link: location.href, at: { ".sv": "timestamp" } }),
+      }).then((r) => {
+        if (!r.ok) return;
+        say("Signing in on your phone…", 'Keep BudGet open on the "Check your email" screen.');
+        waitForPhone();
+      }).catch(() => {});
+    }
+
     // On Android, hand this exact link (with its one-time code) to the BudGet app.
     if (/Android/i.test(navigator.userAgent)) {
       document.documentElement.classList.add("is-android");

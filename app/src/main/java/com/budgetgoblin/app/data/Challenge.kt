@@ -3,11 +3,11 @@ package com.budgetgoblin.app.data
 import java.util.concurrent.TimeUnit
 
 /** A spending challenge: avoid [category] (or any spending when null) for [days] days. */
-enum class ChallengeType(val title: String, val emoji: String, val category: Category?, val days: Int) {
-    NO_SHOPPING("No shopping", "🛍️", Category.SHOPPING, 7),
-    NO_COFFEE("No coffee runs", "☕", Category.COFFEE, 5),
-    NO_FUN("No fun spending", "🎮", Category.FUN, 3),
-    NO_SPEND("No-spend weekend", "🪙", null, 2);
+enum class ChallengeType(val title: String, val category: Category?, val days: Int) {
+    NO_SHOPPING("No shopping", Category.SHOPPING, 7),
+    NO_COFFEE("No coffee runs", Category.COFFEE, 5),
+    NO_FUN("No fun spending", Category.FUN, 3),
+    NO_SPEND("No-spend weekend", null, 2);
 
     val durationMillis get() = TimeUnit.DAYS.toMillis(days.toLong())
 

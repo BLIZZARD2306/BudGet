@@ -48,25 +48,22 @@ enum class Mood(@param:DrawableRes val res: Int, val description: String) {
 }
 
 /**
- * The goblin in a pose, acting it out: he waves, cries, cheers, gets a fright or thinks (see
- * [MascotMotion]), always staying on the ground. The action plays a few times when he appears or
- * changes mood, and again when tapped. Nothing moves when the system has animations turned off.
+ * The goblin in a pose, acting it out with that pose's own movement and detail (see [Mood.act]),
+ * always staying on the ground. The action plays when he appears or changes mood, and again when
+ * tapped. Nothing moves when the system has animations turned off.
  */
 @Composable
 fun Mascot(mood: Mood, modifier: Modifier = Modifier, size: Dp = 64.dp, tappable: Boolean = true) {
     val still = rememberReducedMotion()
-    val motion = mood.motion()
+    val act = mood.act()
     val clock = remember { Animatable(0f) } // cycles elapsed; 0 means resting
     var plays by remember { mutableIntStateOf(0) }
-    val detail = MaterialTheme.colorScheme.onSurfaceVariant // motion lines and dots that show in light and dark
+    val detail = MaterialTheme.colorScheme.onSurfaceVariant // lines, dots and puffs that show in light and dark
 
     LaunchedEffect(mood, plays, still) {
         clock.snapTo(0f)
-        if (still || motion == MascotMotion.NONE) return@LaunchedEffect
-        clock.animateTo(
-            motion.cycles.toFloat(),
-            tween(motion.cycleMillis * motion.cycles, easing = LinearEasing),
-        )
+        if (still) return@LaunchedEffect
+        clock.animateTo(act.cycles.toFloat(), tween(act.cycleMillis * act.cycles, easing = LinearEasing))
         clock.snapTo(0f)
     }
 
@@ -77,14 +74,14 @@ fun Mascot(mood: Mood, modifier: Modifier = Modifier, size: Dp = 64.dp, tappable
         modifier = modifier
             .size(size)
             // Read the clock only while drawing, so the animation never recomposes the screen.
-            .graphicsLayer { applyMotion(motion, clock.value) }
+            .graphicsLayer { applyAct(act, clock.value) }
             .drawWithContent {
                 drawContent()
-                drawMotion(motion, mood, clock.value, detail)
+                drawAct(act, clock.value, detail)
             }
             // Tap to see it again. Inside a button, the tap goes to the button instead.
-            .pointerInput(still, tappable, motion) {
-                if (still || !tappable || motion == MascotMotion.NONE) return@pointerInput
+            .pointerInput(still, tappable) {
+                if (still || !tappable) return@pointerInput
                 detectTapGestures { plays++ }
             },
     )
@@ -136,6 +133,7 @@ fun reactionTo(t: Transaction, before: List<Transaction>, budget: Double): Tip {
     if (savingsRate(before) < SAVINGS_GOAL && savingsRate(after) >= SAVINGS_GOAL) {
         return Tip(Mood.LEVEL_UP, "Savings goal reached! Level up!")
     }
+    if (t.isIncome && t.toBudget) return Tip(Mood.GUARDING, "Added to this month's budget. More room to spend!")
     if (t.isIncome) return Tip(Mood.INVESTING, "Money in! Watch it grow.")
     val category = t.category ?: return Tip(Mood.HAPPY, "Logged it!")
     val spentBefore = before.filter { it.category == category }.sumOf { it.amount }
