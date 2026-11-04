@@ -40,6 +40,7 @@ class CloudSync(private val state: BudgetState) {
     private fun user(uid: String) = db.collection("users").document(uid)
     private fun transactions(uid: String) = user(uid).collection("transactions")
     private fun challenges(uid: String) = user(uid).collection("challenges")
+    private fun accounts(uid: String) = user(uid).collection("accounts")
 
     /**
      * Starts live updates from the account; local changes go up from here on. Until the server
@@ -53,6 +54,7 @@ class CloudSync(private val state: BudgetState) {
         state.cloud = this
         var transactionsLive = false
         var challengesLive = false
+        var accountsLive = false
         status = SyncStatus.CONNECTING
         listeners = listOf(
             transactions(uid).addSnapshotListener(MetadataChanges.INCLUDE) { snap, e ->
@@ -66,6 +68,11 @@ class CloudSync(private val state: BudgetState) {
                 if (snap == null) return@addSnapshotListener
                 challengesLive = challengesLive || !snap.metadata.isFromCache
                 if (challengesLive) state.applyChallenges(snap.documents.mapNotNull(::toChallenge))
+            },
+            accounts(uid).addSnapshotListener(MetadataChanges.INCLUDE) { snap, _ ->
+                if (snap == null) return@addSnapshotListener
+                accountsLive = accountsLive || !snap.metadata.isFromCache
+                if (accountsLive) state.applyAccounts(snap.documents.mapNotNull(::toAccount))
             },
             user(uid).addSnapshotListener { snap, _ ->
                 snap?.getDouble(FIELD_BUDGET)?.let(state::applyBudget)
@@ -90,6 +97,7 @@ class CloudSync(private val state: BudgetState) {
         val batch = db.batch()
         state.transactions.forEach { batch.set(transactions(uid).document(it.id.toString()), fromTransaction(it)) }
         state.challenges.forEach { batch.set(challenges(uid).document(it.startedAt.toString()), fromChallenge(it)) }
+        state.accounts.forEach { batch.set(accounts(uid).document(it.id.toString()), fromAccount(it)) }
         batch.set(user(uid), mapOf(FIELD_BUDGET to state.monthlyBudget) + fromSchedule(state.schedule), SetOptions.merge())
         batch.commit().await()
     }
@@ -99,6 +107,7 @@ class CloudSync(private val state: BudgetState) {
         val batch = db.batch()
         transactions(uid).get().await().documents.forEach { batch.delete(it.reference) }
         challenges(uid).get().await().documents.forEach { batch.delete(it.reference) }
+        accounts(uid).get().await().documents.forEach { batch.delete(it.reference) }
         batch.delete(user(uid))
         batch.commit().await()
     }
@@ -106,8 +115,20 @@ class CloudSync(private val state: BudgetState) {
     fun put(t: Transaction) { uid?.let { transactions(it).document(t.id.toString()).set(fromTransaction(t)) } }
     fun remove(t: Transaction) { uid?.let { transactions(it).document(t.id.toString()).delete() } }
     fun put(c: Challenge) { uid?.let { challenges(it).document(c.startedAt.toString()).set(fromChallenge(c)) } }
+    fun put(a: Account) { uid?.let { accounts(it).document(a.id.toString()).set(fromAccount(a)) } }
+    fun remove(a: Account) { uid?.let { accounts(it).document(a.id.toString()).delete() } }
     fun putBudget(amount: Double) { uid?.let { user(it).set(mapOf(FIELD_BUDGET to amount), SetOptions.merge()) } }
     fun putSchedule(s: PaySchedule) { uid?.let { user(it).set(fromSchedule(s), SetOptions.merge()) } }
+
+    private fun fromAccount(a: Account) = mapOf("name" to a.name, "kind" to a.kind.name, "start" to a.startBalance, "color" to a.color)
+
+    private fun toAccount(d: DocumentSnapshot): Account? = Account(
+        id = d.id.toLongOrNull() ?: return null,
+        name = d.getString("name") ?: "Card",
+        kind = AccountKind.entries.firstOrNull { it.name == d.getString("kind") } ?: AccountKind.CASH,
+        startBalance = d.getDouble("start") ?: 0.0,
+        color = (d.getLong("color") ?: 0L).toInt(),
+    )
 
     private fun fromSchedule(s: PaySchedule) = mapOf("payCycle" to s.cycle.name, "payWeekStart" to s.weekStart, "payAnchor" to s.anchor)
 
@@ -124,6 +145,7 @@ class CloudSync(private val state: BudgetState) {
         "category" to t.category?.name,
         "date" to t.date,
         "toBudget" to t.toBudget,
+        "account" to t.accountId,
     )
 
     private fun toTransaction(d: DocumentSnapshot): Transaction? = Transaction(
@@ -134,6 +156,7 @@ class CloudSync(private val state: BudgetState) {
         category = d.getString("category")?.let { name -> Category.entries.firstOrNull { it.name == name } },
         date = d.getLong("date") ?: return null,
         toBudget = d.getBoolean("toBudget") ?: false,
+        accountId = d.getLong("account") ?: Account.CASH_ID,
     )
 
     private fun fromChallenge(c: Challenge) = mapOf(

@@ -21,6 +21,54 @@ class BudgetState(private val store: BudgetStore) {
         if (store.hasSavedData) store.saveTransactions(this)
     }
     val challenges = mutableStateListOf<Challenge>().apply { addAll(store.loadChallenges()) }
+
+    /** The wallet's cards; Cash ([Account.CASH_ID]) is always there and can't be removed. */
+    val accounts = mutableStateListOf<Account>().apply { addAll(store.loadAccounts()) }
+
+    fun account(id: Long): Account = accounts.firstOrNull { it.id == id } ?: accounts.first { it.id == Account.CASH_ID }
+
+    /** Everything paid with or received in [account], newest first (unknown cards count as Cash). */
+    fun historyOf(account: Account): List<Transaction> {
+        val known = accounts.map { it.id }.toSet()
+        return transactions
+            .filter { t -> t.accountId == account.id || (account.id == Account.CASH_ID && t.accountId !in known) }
+            .sortedByDescending { it.date }
+    }
+
+    /** Starting amount, plus money in, minus money out. */
+    fun balanceOf(account: Account): Double =
+        account.startBalance + historyOf(account).sumOf { if (it.isIncome) it.amount else -it.amount }
+
+    val totalBalance: Double get() = accounts.sumOf { balanceOf(it) }
+
+    fun saveAccount(a: Account) {
+        val i = accounts.indexOfFirst { it.id == a.id }
+        if (i >= 0) accounts[i] = a else accounts.add(a)
+        store.saveAccounts(accounts)
+        cloud?.put(a)
+    }
+
+    /** Removes a card; its history moves to Cash so no money disappears from the totals. */
+    fun removeAccount(a: Account) {
+        if (a.id == Account.CASH_ID) return
+        transactions.toList().forEachIndexed { i, t ->
+            if (t.accountId == a.id) {
+                val moved = t.copy(accountId = Account.CASH_ID)
+                transactions[i] = moved
+                cloud?.put(moved)
+            }
+        }
+        store.saveTransactions(transactions)
+        accounts.removeAll { it.id == a.id }
+        store.saveAccounts(accounts)
+        cloud?.remove(a)
+    }
+
+    fun applyAccounts(list: List<Account>) {
+        accounts.clear()
+        accounts.addAll(if (list.none { it.id == Account.CASH_ID }) listOf(Account.cash()) + list else list.sortedBy { it.id })
+        store.saveAccounts(accounts)
+    }
     /** The budget for one pay period (a month, a week, ... per [schedule]). Stored under its old name. */
     var monthlyBudget by mutableDoubleStateOf(store.loadBudget())
         private set
@@ -139,6 +187,7 @@ class BudgetState(private val store: BudgetStore) {
         applyChallenges(emptyList())
         applyBudget(BudgetStore.DEFAULT_BUDGET.toDouble())
         applySchedule(PaySchedule())
+        applyAccounts(emptyList())
         syncedUid = null
     }
 

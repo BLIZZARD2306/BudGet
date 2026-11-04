@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- BudGet pixel icon: card (16x16 grid). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="16"
+    android:viewportHeight="16">
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M1,3h14v1h-14zM0,4h16v1h-16zM0,5h16v1h-16zM0,8h16v1h-16zM0,9h16v1h-16zM0,10h2v1h-2zM7,10h9v1h-9zM0,11h2v1h-2zM7,11h9v1h-9zM0,12h16v1h-16zM1,13h14v1h-14z" />
+</vector>

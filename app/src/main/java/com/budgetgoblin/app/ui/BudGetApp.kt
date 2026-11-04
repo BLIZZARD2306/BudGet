@@ -42,6 +42,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
+import com.budgetgoblin.app.data.AppUpdate
+import com.budgetgoblin.app.data.Updater
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -63,7 +66,7 @@ import kotlinx.coroutines.launch
 
 enum class Tab(val label: String, @param:DrawableRes val icon: Int) {
     HOME("Home", R.drawable.px_nav_home),
-    CATEGORIES("Categories", R.drawable.px_nav_categories),
+    WALLET("Wallet", R.drawable.px_card),
     ADD("Add", R.drawable.px_nav_add),
     STATS("Stats", R.drawable.px_nav_stats),
     CHALLENGES("Challenges", R.drawable.px_nav_challenges),
@@ -82,14 +85,20 @@ fun BudGetApp(
     var reaction by remember { mutableStateOf<Tip?>(null) }
     var showHelp by rememberSaveable { mutableStateOf(false) }
     var showAccount by rememberSaveable { mutableStateOf(false) }
-    var categoriesToTop by remember { mutableIntStateOf(0) } // bumped when Categories is tapped again
+    var walletToTop by remember { mutableIntStateOf(0) } // bumped when Wallet is tapped again
+    var openCard by rememberSaveable { mutableStateOf<Long?>(null) } // a card whose audit is showing
     var uploadOffer by remember { mutableStateOf<String?>(null) }
     var confirmLink by remember { mutableStateOf<String?>(null) }
     val sync = remember { CloudSync(state) }
     DisposableEffect(sync) { onDispose { sync.stop() } }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val updater = remember { Updater(context.applicationContext) }
+    var update by remember { mutableStateOf<AppUpdate?>(null) }
+    LaunchedEffect(Unit) { update = updater.check() }
     BackHandler(enabled = showAccount) { showAccount = false }
-    BackHandler(enabled = !showAccount && tab != Tab.HOME) { tab = Tab.HOME }
+    BackHandler(enabled = !showAccount && openCard != null) { openCard = null }
+    BackHandler(enabled = !showAccount && openCard == null && tab != Tab.HOME) { tab = Tab.HOME }
 
     fun startSync(uid: String) {
         state.syncedUid = uid
@@ -195,8 +204,11 @@ fun BudGetApp(
                     onThemeMode = onThemeMode,
                 )
                 Tab.HOME -> HomeScreen(state, signedIn = auth.user != null, synced = sync.status == SyncStatus.SYNCED, onHelp = { showHelp = true }, onAccount = { showAccount = true })
-                Tab.CATEGORIES -> CategoriesScreen(state, scrollToTop = categoriesToTop)
+                Tab.WALLET -> openCard?.let { id -> state.accounts.firstOrNull { it.id == id } }
+                    ?.let { CardDetailScreen(state, it, onBack = { openCard = null }) }
+                    ?: WalletScreen(state, onOpenCard = { openCard = it.id }, scrollToTop = walletToTop)
                 Tab.ADD -> AddScreen(
+                    accounts = state.accounts,
                     onCancel = { tab = Tab.HOME },
                     onSave = { t ->
                         val before = state.thisPeriod
@@ -223,7 +235,8 @@ fun BudGetApp(
             BottomBar(
                 current = tab,
                 onSelect = {
-                    if (it == Tab.CATEGORIES && tab == Tab.CATEGORIES) categoriesToTop++
+                    if (it == Tab.WALLET && tab == Tab.WALLET) { openCard = null; walletToTop++ }
+                    if (it != Tab.WALLET) openCard = null
                     tab = it
                 },
                 modifier = Modifier.align(Alignment.BottomCenter),
@@ -237,6 +250,7 @@ fun BudGetApp(
     }
 
     if (showHelp) HelpDialog(onDismiss = { showHelp = false })
+    update?.let { UpdateDialog(it, updater, onDismiss = { update = null }) }
 
     uploadOffer?.let { uid ->
         AlertDialog(

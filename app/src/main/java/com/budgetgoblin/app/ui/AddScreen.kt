@@ -1,5 +1,10 @@
 package com.budgetgoblin.app.ui
 
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.horizontalScroll
+import com.budgetgoblin.app.data.Account
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -56,7 +61,8 @@ import com.budgetgoblin.app.ui.theme.Nunito
  * one big question, pickable tiles, and a full-width button pinned to the bottom.
  */
 @Composable
-fun AddScreen(onCancel: () -> Unit, onSave: (Transaction) -> Unit) {
+fun AddScreen(accounts: List<Account>, onCancel: () -> Unit, onSave: (Transaction) -> Unit) {
+    var accountId by rememberSaveable { mutableLongStateOf(Account.CASH_ID) }
     var isIncome by rememberSaveable { mutableStateOf(false) }
     var category by rememberSaveable { mutableStateOf(Category.FOOD) }
     var amountText by rememberSaveable { mutableStateOf("") }
@@ -177,6 +183,25 @@ fun AddScreen(onCancel: () -> Unit, onSave: (Transaction) -> Unit) {
                 }
             }
 
+            Label(if (isIncome) "Received in" else "Paid with")
+            Row(
+                Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                accounts.forEach { a ->
+                    Tile(a.id == accountId, onClick = { accountId = a.id }, modifier = Modifier.height(56.dp)) {
+                        Row(Modifier.padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                Modifier.size(26.dp).background(Brush.linearGradient(CardColors[a.color.coerceIn(0, CardColors.lastIndex)]), CircleShape),
+                                contentAlignment = Alignment.Center,
+                            ) { PixelIcon(a.kind.icon(), contentDescription = null, tint = androidx.compose.ui.graphics.Color.White, size = 14.dp) }
+                            Spacer(Modifier.width(8.dp))
+                            Text(a.name, fontWeight = FontWeight.ExtraBold, maxLines = 1)
+                        }
+                    }
+                }
+            }
+
             Label("What for?")
             OutlinedTextField(
                 value = title,
@@ -260,6 +285,7 @@ fun AddScreen(onCancel: () -> Unit, onSave: (Transaction) -> Unit) {
                             isIncome = isIncome,
                             category = if (isIncome) null else category,
                             toBudget = isIncome && toBudget,
+                            accountId = accountId,
                         )
                     )
                 },

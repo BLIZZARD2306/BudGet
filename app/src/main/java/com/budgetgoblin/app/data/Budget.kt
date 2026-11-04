@@ -27,6 +27,8 @@ data class Transaction(
     val category: Category?,
     val date: Long = System.currentTimeMillis(),
     val toBudget: Boolean = false,
+    /** The wallet card it was paid with or received in ([Account.CASH_ID] if none was chosen). */
+    val accountId: Long = Account.CASH_ID,
 )
 
 fun isThisMonth(millis: Long, now: Long = System.currentTimeMillis()): Boolean {
@@ -46,7 +48,7 @@ fun startOfDay(daysAgo: Int, now: Long = System.currentTimeMillis()): Long =
 /**
  * Saves everything to SharedPreferences. Transactions are one per line:
  * id|isIncome|amount|category|date|title (older saves have no date field). A budget top-up stores
- * [TOP_UP] in the category column.
+ * [TOP_UP] in the category column; the card it was paid with rides on the date as date@cardId.
  */
 class BudgetStore(context: Context) {
     private val prefs = context.getSharedPreferences("budget", Context.MODE_PRIVATE)
@@ -71,6 +73,16 @@ class BudgetStore(context: Context) {
 
     fun saveBudget(amount: Double) = prefs.edit { putFloat(KEY_BUDGET, amount.toFloat()) }
 
+    /** The wallet's cards; Cash is always first, even on a fresh install. */
+    fun loadAccounts(): List<Account> {
+        val saved = prefs.getString(KEY_ACCOUNTS, null)?.lines()?.mapNotNull(Account::decode).orEmpty()
+        return if (saved.none { it.id == Account.CASH_ID }) listOf(Account.cash()) + saved else saved
+    }
+
+    fun saveAccounts(accounts: List<Account>) {
+        prefs.edit { putString(KEY_ACCOUNTS, accounts.joinToString("\n") { it.encode() }) }
+    }
+
     fun loadSchedule() = PaySchedule(
         cycle = PayCycle.entries.firstOrNull { it.name == prefs.getString(KEY_PAY_CYCLE, null) } ?: PayCycle.MONTHLY,
         weekStart = prefs.getInt(KEY_PAY_WEEK_START, java.util.Calendar.MONDAY),
@@ -91,7 +103,7 @@ class BudgetStore(context: Context) {
     }
 
     private fun encode(t: Transaction) =
-        listOf(t.id, t.isIncome, t.amount, if (t.toBudget) TOP_UP else t.category?.name.orEmpty(), t.date, t.title.replace('\n', ' '))
+        listOf(t.id, t.isIncome, t.amount, if (t.toBudget) TOP_UP else t.category?.name.orEmpty(), if (t.accountId == Account.CASH_ID) t.date else "${t.date}@${t.accountId}", t.title.replace('\n', ' '))
             .joinToString("|")
 
     private fun decode(line: String): Transaction? {
@@ -99,8 +111,9 @@ class BudgetStore(context: Context) {
         if (parts.size < 5) return null
         val id = parts[0].toLongOrNull() ?: return null
         // Old 5-field lines have no date: ids from the app are timestamps, sample ids are 1, 2, 3…
-        val dated = parts.size == 6 && parts[4].toLongOrNull() != null
-        val date = if (dated) parts[4].toLong() else if (id > 1_000_000_000_000) id else startOfDay(id.toInt() % 7) + HOUR * 12
+        val dateField = parts.getOrNull(4)?.split("@")
+        val dated = parts.size == 6 && dateField?.get(0)?.toLongOrNull() != null
+        val date = if (dated) dateField!![0].toLong() else if (id > 1_000_000_000_000) id else startOfDay(id.toInt() % 7) + HOUR * 12
         return Transaction(
             id = id,
             isIncome = parts[1].toBoolean(),
@@ -109,6 +122,7 @@ class BudgetStore(context: Context) {
             date = date,
             title = if (dated) parts[5] else parts.drop(4).joinToString("|"),
             toBudget = parts[3] == TOP_UP,
+            accountId = if (dated) dateField!!.getOrNull(1)?.toLongOrNull() ?: Account.CASH_ID else Account.CASH_ID,
         )
     }
 
@@ -136,6 +150,7 @@ class BudgetStore(context: Context) {
         const val DEFAULT_BUDGET = 2000f
         private const val TOP_UP = "+BUDGET"
         private const val KEY_PAY_CYCLE = "pay_cycle"
+        private const val KEY_ACCOUNTS = "accounts"
         private const val KEY_PAY_WEEK_START = "pay_week_start"
         private const val KEY_PAY_ANCHOR = "pay_anchor"
         private const val KEY_TRANSACTIONS = "transactions"

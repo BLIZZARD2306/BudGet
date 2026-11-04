@@ -137,7 +137,7 @@ fun Chunky(
     )
 }
 
-/** The page body of a tab. Starts at the very top of the screen (StackingCards measures from there). */
+/** The page body of a tab, starting at the very top of the screen under the status bar. */
 @Composable
 fun ScreenColumn(scroll: ScrollState, content: @Composable ColumnScope.() -> Unit) {
     Column(
