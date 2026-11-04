@@ -73,12 +73,47 @@ import androidx.compose.ui.unit.sp
 import com.budgetgoblin.app.data.Category
 import com.budgetgoblin.app.ui.theme.CoinGold
 import com.budgetgoblin.app.ui.theme.lip
+import android.content.Context
+import androidx.core.content.edit
 import java.text.NumberFormat
+import java.util.Currency
+import java.util.Locale
 import java.text.SimpleDateFormat
 import java.util.Date
 import kotlinx.coroutines.delay
 
-val money: NumberFormat = NumberFormat.getCurrencyInstance()
+/** Currencies amounts can be shown in, each written the way people there write it (₱1,250.00). */
+enum class AppCurrency(val label: String, private val locale: Locale) {
+    PHP("Peso", Locale("en", "PH")),
+    USD("Dollar", Locale.US),
+    EUR("Euro", Locale("en", "IE")),
+    GBP("Pound", Locale.UK);
+
+    val format: NumberFormat by lazy { NumberFormat.getCurrencyInstance(locale) }
+    val symbol: String get() = format.currency?.getSymbol(locale) ?: name
+
+    companion object {
+        private const val KEY = "currency"
+
+        /** The saved choice, else the phone's own currency if it's one of these, else pesos. */
+        fun load(context: Context): AppCurrency {
+            val saved = context.getSharedPreferences("settings", Context.MODE_PRIVATE).getString(KEY, null)
+            val local = runCatching { Currency.getInstance(Locale.getDefault()).currencyCode }.getOrNull()
+            return entries.firstOrNull { it.name == saved } ?: entries.firstOrNull { it.name == local } ?: PHP
+        }
+
+        fun save(context: Context, currency: AppCurrency) {
+            context.getSharedPreferences("settings", Context.MODE_PRIVATE).edit { putString(KEY, currency.name) }
+            appCurrency = currency
+        }
+    }
+}
+
+/** The currency every amount is shown in; set from settings when the app starts. */
+var appCurrency by mutableStateOf(AppCurrency.PHP)
+
+/** Formats amounts in [appCurrency]. Reading it in a composable recomposes when the currency changes. */
+val money: NumberFormat get() = appCurrency.format
 val CardShape = RoundedCornerShape(24.dp)
 val PanelShape: Shape = PixelShape()
 val monthName: String get() = SimpleDateFormat("MMMM").format(Date())

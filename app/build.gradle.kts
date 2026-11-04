@@ -25,8 +25,11 @@ android {
         applicationId = "com.budgetgoblin.app"
         minSdk = 24
         targetSdk = 37
-        versionCode = 2
-        versionName = "1.1"
+        // versionCode goes up by 1 every release. versionName is BIG.MAJOR.MINOR:
+        // BIG for very big updates with lots of changes, MAJOR for smaller feature updates,
+        // MINOR for fixes and small tweaks.
+        versionCode = 3
+        versionName = "1.1.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         manifestPlaceholders["firebaseLinkHost"] = firebaseProjectId?.let { "$it.firebaseapp.com" } ?: "invalid.invalid"

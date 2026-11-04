@@ -95,6 +95,7 @@ fun AccountScreen(
         }
         PaySchedulePanel(schedule, onSchedule)
         AppearancePanel(themeMode, onThemeMode)
+        CurrencyPanel()
     }
 }
 
@@ -472,6 +473,31 @@ private fun AppearancePanel(mode: ThemeMode, onMode: (ThemeMode) -> Unit) {
     }
 }
 
+@Composable
+private fun CurrencyPanel() {
+    val context = LocalContext.current
+    SectionTitle("Currency")
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        AppCurrency.entries.forEach { c ->
+            Tile(
+                selected = c == appCurrency,
+                onClick = { AppCurrency.save(context, c) },
+                modifier = Modifier.weight(1f).height(84.dp),
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        c.symbol,
+                        fontWeight = FontWeight.Black,
+                        fontSize = 22.sp,
+                        color = if (c == appCurrency) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(c.label.uppercase(), fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, letterSpacing = 0.6.sp)
+                }
+            }
+        }
+    }
+}
+
 /**
  * Sign out and delete are run by the app (onSignOut / onDeleteAccount), not here: this screen
  * leaves the composition the moment the user is signed out, which would cancel its own coroutines.
@@ -480,6 +506,7 @@ private fun AppearancePanel(mode: ThemeMode, onMode: (ThemeMode) -> Unit) {
 private fun SignedIn(auth: Auth, syncStatus: SyncStatus, onSignOut: () -> Unit, onDeleteAccount: () -> Unit) {
     val user = auth.user ?: return
     var confirmDelete by rememberSaveable { mutableStateOf(false) }
+    var confirmSignOut by rememberSaveable { mutableStateOf(false) }
 
     Panel {
         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -513,11 +540,35 @@ private fun SignedIn(auth: Auth, syncStatus: SyncStatus, onSignOut: () -> Unit, 
                 textAlign = TextAlign.Center,
             )
             Spacer(Modifier.height(20.dp))
-            PillButton("Sign out", modifier = Modifier.fillMaxWidth(), onClick = onSignOut)
+            PillButton("Sign out", modifier = Modifier.fillMaxWidth(), onClick = { confirmSignOut = true })
             TextButton(onClick = { confirmDelete = true }) {
                 Text("Delete account", color = MaterialTheme.colorScheme.error)
             }
         }
+    }
+
+    if (confirmSignOut) {
+        AlertDialog(
+            onDismissRequest = { confirmSignOut = false },
+            icon = { Mascot(Mood.ANXIOUS, size = 80.dp, tappable = false) },
+            title = { Text("Sign out?") },
+            text = {
+                Text(
+                    if (syncStatus == SyncStatus.SYNCED) {
+                        "Your budget stays safe in your account. This phone will be cleared until you sign back in."
+                    } else {
+                        "This phone hasn't finished syncing. Changes that haven't uploaded yet will be lost if you sign out now."
+                    }
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmSignOut = false
+                    onSignOut()
+                }) { Text("Sign out", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { confirmSignOut = false }) { Text("Stay signed in") } },
+        )
     }
 
     if (confirmDelete) {

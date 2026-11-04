@@ -228,7 +228,7 @@ fun CardDialog(existing: Account?, onDismiss: () -> Unit, onSave: (Account) -> U
                     value = start,
                     onValueChange = { start = it.filter { c -> c.isDigit() || c == '.' || c == '-' } },
                     label = { Text("Money on it before tracking") },
-                    prefix = { Text(money.currency?.symbol ?: "") },
+                    prefix = { Text(appCurrency.symbol) },
                     singleLine = true,
                     shape = RoundedCornerShape(16.dp),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),

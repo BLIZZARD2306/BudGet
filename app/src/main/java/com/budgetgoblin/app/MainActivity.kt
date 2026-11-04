@@ -14,7 +14,9 @@ import androidx.core.content.edit
 import com.budgetgoblin.app.data.Auth
 import com.budgetgoblin.app.data.BudgetState
 import com.budgetgoblin.app.data.BudgetStore
+import com.budgetgoblin.app.ui.AppCurrency
 import com.budgetgoblin.app.ui.BudGetApp
+import com.budgetgoblin.app.ui.appCurrency
 import com.budgetgoblin.app.ui.theme.BudGetTheme
 import com.budgetgoblin.app.ui.theme.ThemeMode
 
@@ -26,6 +28,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         if (savedInstanceState == null) incomingLink.value = intent?.dataString
+        appCurrency = AppCurrency.load(this)
         val state = BudgetState(BudgetStore(applicationContext))
         val auth = Auth(applicationContext)
         val settings = getSharedPreferences("settings", MODE_PRIVATE)
