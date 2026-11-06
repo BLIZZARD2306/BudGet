@@ -30,6 +30,20 @@
       font-weight: 700; letter-spacing: .5px; text-decoration: none;
     }
     a.button:focus-visible { outline: 3px solid var(--text); outline-offset: 3px; }
+    form { margin-top: 20px; padding-top: 20px; border-top: 2px solid var(--bg); }
+    form label { display: block; font-weight: 700; margin-bottom: 4px; }
+    form input {
+      width: 100%; max-width: 220px; margin: 8px auto 4px; display: block; padding: 12px; border-radius: 14px;
+      border: 2px solid var(--muted); background: var(--card); color: var(--text);
+      font-size: 28px; font-weight: 800; letter-spacing: 6px; text-align: center;
+    }
+    form input:focus-visible, form button:focus-visible { outline: 3px solid var(--text); outline-offset: 3px; }
+    form button {
+      margin-top: 12px; padding: 14px 28px; border: 0; border-radius: 999px; cursor: pointer;
+      background: linear-gradient(90deg, var(--coral-light), var(--coral)); color: #fff;
+      font: inherit; font-weight: 700; letter-spacing: .5px;
+    }
+    .warn { font-size: 14px; margin-top: 14px; }
     .android-only { display: none; }
     .is-android .android-only { display: block; }
     .is-android .desktop-only { display: none; }
@@ -42,6 +56,13 @@
     <div class="desktop-only" id="desktop">
       <p>This sign-in link only works in the BudGet app.</p>
       <p>Open the email on the phone where BudGet is installed and tap the link there.</p>
+      <form id="code-form" hidden>
+        <label for="code">Or sign in your phone from here</label>
+        <p>Type the 6-digit code shown in BudGet on the "Check your email" screen.</p>
+        <input id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" pattern="[0-9 ]{6,7}" required aria-describedby="code-warn">
+        <button type="submit">Sign in my phone</button>
+        <p class="warn" id="code-warn"><strong>Didn't just ask to sign in on your phone? Close this page.</strong> Never type a code someone else gave you.</p>
+      </form>
     </div>
     <div id="handed" hidden>
       <p>Your phone is signing in now. Keep BudGet open on the "Check your email" screen.</p>
@@ -55,10 +76,12 @@
   </main>
   <script>
     // Opened somewhere other than the phone that asked (like a computer)? Hand this link to that
-    // phone: it waits on handoff/<id> in the Realtime Database and signs itself in.
+    // phone, but only once the person types the code that phone shows: it waits on
+    // handoff/<id>/<code> in the Realtime Database. Without the code, a link someone else requested
+    // for your email can't sign *their* phone in when you open it.
     const q = new URLSearchParams(location.search);
     const handoff = q.get("h");
-    const slot = "https://budget-4f990-default-rtdb.firebaseio.com/handoff/" + handoff + ".json";
+    let slot = null;
     const say = (title, ...lines) => {
       document.querySelector("h1").textContent = title;
       document.getElementById("desktop").hidden = true;
@@ -66,9 +89,17 @@
       box.hidden = false;
       box.innerHTML = lines.map((l) => "<p>" + l + "</p>").join("");
     };
-    // The phone deletes the slot once it has signed in; that's our confirmation.
+    // The phone deletes the slot once it has signed in; that's our confirmation. A wrong code
+    // lands in a slot no phone is watching, so after a while we offer to try again.
     const waitForPhone = async () => {
       for (let i = 0; i < 90; i++) {
+        if (i === 15) {
+          say("Still waiting for your phone…", "Check that the code matches the one in BudGet, and keep BudGet open.");
+          form.hidden = false;
+          document.getElementById("desktop").hidden = false;
+          document.getElementById("code").value = "";
+          return;
+        }
         await new Promise((r) => setTimeout(r, 2000));
         const body = await fetch(slot).then((r) => r.json()).catch(() => undefined);
         if (body === null) {
@@ -80,15 +111,23 @@
         }
       }
     };
+    const form = document.getElementById("code-form");
     if (handoff && q.get("oobCode") && /^[0-9a-f]{32}$/.test(handoff)) {
-      fetch(slot, {
-        method: "PUT",
-        body: JSON.stringify({ link: location.href, at: { ".sv": "timestamp" } }),
-      }).then((r) => {
-        if (!r.ok) return;
-        say("Signing in on your phone…", 'Keep BudGet open on the "Check your email" screen.');
-        waitForPhone();
-      }).catch(() => {});
+      form.hidden = false;
+      form.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const code = document.getElementById("code").value.replace(/\s/g, "");
+        if (!/^[0-9]{6}$/.test(code)) return;
+        slot = "https://budget-4f990-default-rtdb.firebaseio.com/handoff/" + handoff + "/" + code + ".json";
+        fetch(slot, {
+          method: "PUT",
+          body: JSON.stringify({ link: location.href, at: { ".sv": "timestamp" } }),
+        }).then((r) => {
+          if (!r.ok) return say("That code was already used", "Send a new sign-in link from BudGet and try again.");
+          say("Signing in on your phone…", 'Keep BudGet open on the "Check your email" screen.');
+          waitForPhone();
+        }).catch(() => say("Couldn't reach BudGet", "Check your internet and try again."));
+      });
     }
 
     // On Android, hand this exact link (with its one-time code) to the BudGet app.

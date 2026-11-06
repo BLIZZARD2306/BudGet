@@ -181,6 +181,7 @@ private fun ColumnScope.SignedOut(auth: Auth, onMessage: (Tip) -> Unit, onWork: 
             BackTitle("Check your email") { step = EmailStep.ENTER }
             LinkSent(
                 email = email.trim(),
+                code = auth.handoffCode,
                 sentAt = sentAt,
                 busy = busy,
                 onResend = ::send,
@@ -295,6 +296,7 @@ private fun EnterEmail(email: String, onEmailChange: (String) -> Unit, busy: Boo
 @Composable
 private fun LinkSent(
     email: String,
+    code: String?,
     sentAt: Long,
     busy: Boolean,
     onResend: () -> Unit,
@@ -323,9 +325,13 @@ private fun LinkSent(
             Text(email, fontWeight = FontWeight.SemiBold)
         }
         Spacer(Modifier.height(16.dp))
-        Step("1", "Open the email here or on your computer")
+        Step("1", "Open the email on this phone")
         Step("2", "Tap the Sign in link. This screen signs in by itself")
         Step("3", "Not there? Check Spam or Promotions. It can take a few minutes.")
+        if (code != null) {
+            Spacer(Modifier.height(16.dp))
+            HandoffCode(code)
+        }
         Spacer(Modifier.height(20.dp))
         PillButton("Open email app", modifier = Modifier.fillMaxWidth(), onClick = onOpenEmail)
         Spacer(Modifier.height(12.dp))
@@ -337,6 +343,47 @@ private fun LinkSent(
         TextButton(onClick = onChangeEmail, modifier = Modifier.align(Alignment.CenterHorizontally)) {
             Text("Use a different email")
         }
+    }
+}
+
+/** The code to type on a computer that opened the email; only ever shown on this phone. */
+@Composable
+private fun HandoffCode(code: String) {
+    val spaced = code.chunked(3).joinToString(" ")
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceVariant, PanelShape)
+            .padding(16.dp)
+            .semantics(mergeDescendants = true) {},
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            "Opened the email on a computer?",
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+        )
+        Text(
+            "Type this code on the page that opens:",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+        Text(
+            spaced,
+            fontSize = 32.sp,
+            fontWeight = FontWeight.Black,
+            letterSpacing = 4.sp,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(top = 6.dp).semantics { contentDescription = "Code ${code.toList().joinToString(" ")}" },
+        )
+        Text(
+            "Never share this code with anyone.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
     }
 }
 

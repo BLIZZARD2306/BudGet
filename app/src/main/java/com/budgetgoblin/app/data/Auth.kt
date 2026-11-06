@@ -25,6 +25,8 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.security.SecureRandom
+import java.util.Locale
 import java.util.UUID
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -73,33 +75,42 @@ class Auth(private val context: Context) {
 
     /**
      * A one-time ID carried in the email link. If the link is opened on another device (a computer),
-     * the sign-in page posts the link to handoff/<id> in the Realtime Database and this phone picks
-     * it up, so you can sign in here without your email on this device.
+     * the sign-in page asks for [handoffCode], which only this phone shows, and posts the link to
+     * handoff/<id>/<code> in the Realtime Database for this phone to pick up. The code stops a link
+     * requested by someone else (for your email, from their phone) from signing *them* in when you
+     * open the email: you never see their code, so the page never hands your link over.
      */
     var pendingHandoff by mutableStateOf(prefs.getString(KEY_HANDOFF, null))
         private set
 
-    private val handoffUrl get() = "$databaseUrl/handoff/$pendingHandoff.json"
+    /** The 6-digit code to type on the computer's sign-in page, shown on "Check your email". */
+    var handoffCode by mutableStateOf(prefs.getString(KEY_HANDOFF_CODE, null))
+        private set
+
+    private val handoffUrl get() = "$databaseUrl/handoff/$pendingHandoff/$handoffCode.json"
 
     suspend fun sendEmailLink(email: String) {
         val handoff = UUID.randomUUID().toString().replace("-", "")
+        val code = String.format(Locale.ROOT, "%06d", SecureRandom().nextInt(1_000_000))
         val settings = ActionCodeSettings.newBuilder()
             .setUrl("https://$linkDomain/finishSignIn?h=$handoff")
             .setHandleCodeInApp(true)
             .setAndroidPackageName(context.packageName, true, null)
             .build() // the link itself comes from the project's default firebaseapp.com domain
         auth.sendSignInLinkToEmail(email, settings).await()
-        prefs.edit { putString(KEY_PENDING_EMAIL, email).putString(KEY_HANDOFF, handoff) }
+        prefs.edit { putString(KEY_PENDING_EMAIL, email).putString(KEY_HANDOFF, handoff).putString(KEY_HANDOFF_CODE, code) }
         pendingHandoff = handoff
+        handoffCode = code
     }
 
     fun isSignInLink(link: String) = available && auth.isSignInWithEmailLink(link)
 
     suspend fun finishEmailLink(email: String, link: String) {
         auth.signInWithEmailLink(email, link).await()
-        if (pendingHandoff != null) runCatching { http("DELETE", handoffUrl) }
-        prefs.edit { remove(KEY_PENDING_EMAIL).remove(KEY_HANDOFF) }
+        if (pendingHandoff != null && handoffCode != null) runCatching { http("DELETE", handoffUrl) }
+        prefs.edit { remove(KEY_PENDING_EMAIL).remove(KEY_HANDOFF).remove(KEY_HANDOFF_CODE) }
         pendingHandoff = null
+        handoffCode = null
     }
 
     /**
@@ -107,7 +118,7 @@ class Auth(private val context: Context) {
      * device and returns it, or null if it never was.
      */
     suspend fun awaitHandoff(): String? {
-        if (pendingHandoff == null) return null
+        if (pendingHandoff == null || handoffCode == null) return null // links sent before codes existed
         repeat(450) {
             val body = runCatching { http("GET", handoffUrl) }.getOrNull()
             if (body != null && body != "null") {
@@ -116,6 +127,7 @@ class Auth(private val context: Context) {
             }
             delay(2000)
         }
+        runCatching { http("DELETE", handoffUrl) } // nothing arrived; leave no link behind
         return null
     }
 
@@ -148,5 +160,6 @@ class Auth(private val context: Context) {
     private companion object {
         const val KEY_PENDING_EMAIL = "pending_email"
         const val KEY_HANDOFF = "pending_handoff"
+        const val KEY_HANDOFF_CODE = "pending_handoff_code"
     }
 }

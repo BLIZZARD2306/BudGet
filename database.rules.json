@@ -2,12 +2,14 @@
   "rules": {
     "handoff": {
       "$id": {
-        ".read": "$id.matches(/^[0-9a-f]{32}$/)",
-        ".write": "$id.matches(/^[0-9a-f]{32}$/) && (!newData.exists() || (!data.exists() && newData.child('at').val() == now))",
-        ".validate": "newData.hasChildren(['link', 'at'])",
-        "link": { ".validate": "newData.isString() && newData.val().length < 2000 && newData.val().beginsWith('https://budget-4f990.firebaseapp.com/')" },
-        "at": { ".validate": "newData.isNumber()" },
-        "$other": { ".validate": false }
+        "$code": {
+          ".read": "$id.matches(/^[0-9a-f]{32}$/) && $code.matches(/^[0-9]{6}$/)",
+          ".write": "$id.matches(/^[0-9a-f]{32}$/) && $code.matches(/^[0-9]{6}$/) && (!newData.exists() || (!data.exists() && newData.child('at').val() == now))",
+          ".validate": "newData.hasChildren(['link', 'at'])",
+          "link": { ".validate": "newData.isString() && newData.val().length < 2000 && newData.val().beginsWith('https://budget-4f990.firebaseapp.com/')" },
+          "at": { ".validate": "newData.isNumber()" },
+          "$other": { ".validate": false }
+        }
       }
     }
   }
