@@ -2,6 +2,8 @@ package com.budgetgoblin.app.data
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageInfo
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
@@ -20,6 +22,8 @@ data class AppUpdate(val versionCode: Long, val versionName: String, val notes: 
 /**
  * Updates outside the Play Store: release.ps1 uploads the APK and a small latest.json to the Vercel page (website/);
  * the app compares that version with its own, downloads the APK and hands it to Android's installer.
+ * Nothing is trusted just because latest.json says so: the APK must come from BudGet's own GitHub
+ * releases, download in full, and be BudGet itself, newer, and signed with the same key as this install.
  */
 class Updater(private val context: Context) {
     private val installed: Long =
@@ -34,7 +38,7 @@ class Updater(private val context: Context) {
                 versionName = json.optString("versionName"),
                 notes = json.optString("notes"),
                 apkUrl = URL(URL(LATEST_URL), json.optString("apk", "budget.apk")).toString(),
-            ).takeIf { it.versionCode > installed }
+            ).takeIf { it.versionCode > installed && it.apkUrl.startsWith(APK_HOME) }
         }.getOrNull()
     }
 
@@ -56,11 +60,28 @@ class Updater(private val context: Context) {
                         done += read
                         if (total > 0) onProgress(done.toFloat() / total)
                     }
+                    check(total <= 0 || done == total) { "Download cut short" }
                 }
             }
+            check(isGenuine(file)) { "Not a genuine BudGet update" }
             file
-        }.getOrNull()
+        }.onFailure { File(context.cacheDir, "updates").deleteRecursively() }.getOrNull()
     }
+
+    /** Whether [apk] is BudGet, newer than this install, and signed with the same key. */
+    private fun isGenuine(apk: File): Boolean {
+        val pm = context.packageManager
+        val archive = pm.getPackageArchiveInfo(apk.path, SIGNATURE_FLAGS) ?: return false
+        val ours = signers(pm.getPackageInfo(context.packageName, SIGNATURE_FLAGS))
+        return archive.packageName == context.packageName &&
+            PackageInfoCompat.getLongVersionCode(archive) > installed &&
+            ours.isNotEmpty() && signers(archive) == ours
+    }
+
+    @Suppress("DEPRECATION")
+    private fun signers(info: PackageInfo): Set<String> =
+        (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) info.signingInfo?.apkContentsSigners else info.signatures)
+            ?.map { it.toCharsString() }?.toSet().orEmpty()
 
     /** Android 8+ asks once per app before it may install others; true when that's still needed. */
     fun needsInstallPermission(): Boolean =
@@ -94,5 +115,10 @@ class Updater(private val context: Context) {
 
     private companion object {
         const val LATEST_URL = "https://budget-goblin.vercel.app/app/latest.json"
+        const val APK_HOME = "https://github.com/BLIZZARD2306/BudGet-Goblin-web/releases/download/"
+
+        @Suppress("DEPRECATION")
+        val SIGNATURE_FLAGS =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) PackageManager.GET_SIGNING_CERTIFICATES else PackageManager.GET_SIGNATURES
     }
 }
