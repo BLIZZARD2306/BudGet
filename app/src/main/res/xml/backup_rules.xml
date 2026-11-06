@@ -1,13 +1,7 @@
-<?xml version="1.0" encoding="utf-8"?><!--
-   Sample backup rules file; uncomment and customize as necessary.
-   See https://developer.android.com/guide/topics/data/autobackup
-   for details.
-   Note: This file is ignored for devices older than API 31
-   See https://developer.android.com/about/versions/12/backup-restore
--->
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Backups (Android 11 and older) keep only the budget and settings. Sign-in, Firebase's own
+     stores and the sync cache stay on this phone, so a restore never brings back a signed-in session. -->
 <full-backup-content>
-    <!--
-   <include domain="sharedpref" path="."/>
-   <exclude domain="sharedpref" path="device.xml"/>
--->
+    <include domain="sharedpref" path="budget.xml" />
+    <include domain="sharedpref" path="settings.xml" />
 </full-backup-content>

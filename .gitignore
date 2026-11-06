@@ -17,3 +17,8 @@ local.properties
 # Firebase CLI deploy cache
 .firebase/
 
+
+# Release signing key and its passwords: never commit, keep a backup somewhere safe.
+keystore.properties
+*.jks
+*.keystore

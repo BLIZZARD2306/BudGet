@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -35,8 +37,23 @@ android {
         manifestPlaceholders["firebaseLinkHost"] = firebaseProjectId?.let { "$it.firebaseapp.com" } ?: "invalid.invalid"
     }
 
+    // Release builds are signed with BudGet's own key, kept out of git: keystore.properties in the
+    // project folder (storeFile, storePassword, keyAlias, keyPassword). Without it, release builds
+    // come out unsigned and can't be installed. Back the key up: losing it means no more updates.
+    val keystore = rootProject.file("keystore.properties")
+    if (keystore.exists()) {
+        val props = Properties().apply { keystore.inputStream().use(::load) }
+        signingConfigs.create("release") {
+            storeFile = rootProject.file(props.getProperty("storeFile"))
+            storePassword = props.getProperty("storePassword")
+            keyAlias = props.getProperty("keyAlias")
+            keyPassword = props.getProperty("keyPassword")
+        }
+    }
+
     buildTypes {
         release {
+            signingConfig = signingConfigs.findByName("release")
             optimization {
                 enable = true
                 packageScope = setOf("androidx.**", "kotlin.**", "kotlinx.**")
