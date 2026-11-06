@@ -31,7 +31,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -76,6 +75,7 @@ import kotlinx.coroutines.launch
 fun AccountScreen(
     auth: Auth,
     onMessage: (Tip) -> Unit,
+    onWork: (Work, Boolean) -> Unit,
     onClose: () -> Unit,
     onSignOut: () -> Unit,
     onDeleteAccount: () -> Unit,
@@ -88,7 +88,7 @@ fun AccountScreen(
     val user = auth.user
     ScreenColumn(rememberScrollState()) {
         if (user == null) {
-            SignedOut(auth, onMessage, onClose)
+            SignedOut(auth, onMessage, onWork, onClose)
         } else {
             BackTitle("Your account", onBack = onClose)
             SignedIn(auth, syncStatus, onSignOut, onDeleteAccount)
@@ -108,7 +108,7 @@ private const val RESEND_SECONDS = 60
  * then a "check your email" screen with resend.
  */
 @Composable
-private fun ColumnScope.SignedOut(auth: Auth, onMessage: (Tip) -> Unit, onClose: () -> Unit) {
+private fun ColumnScope.SignedOut(auth: Auth, onMessage: (Tip) -> Unit, onWork: (Work, Boolean) -> Unit, onClose: () -> Unit) {
     val activity = LocalContext.current as Activity
     val scope = rememberCoroutineScope()
     var step by rememberSaveable { mutableStateOf(EmailStep.CHOOSE) }
@@ -121,6 +121,8 @@ private fun ColumnScope.SignedOut(auth: Auth, onMessage: (Tip) -> Unit, onClose:
 
     fun send() {
         busy = true
+        val w = Work(Mood.ADDING, "Sending your sign-in link…")
+        onWork(w, true)
         scope.launch {
             try {
                 auth.sendEmailLink(email.trim())
@@ -128,8 +130,10 @@ private fun ColumnScope.SignedOut(auth: Auth, onMessage: (Tip) -> Unit, onClose:
                 step = EmailStep.SENT
             } catch (e: Exception) {
                 onMessage(Tip(Mood.SAD, sendError(e)))
+            } finally {
+                busy = false
+                onWork(w, false)
             }
-            busy = false
         }
     }
 
@@ -141,6 +145,8 @@ private fun ColumnScope.SignedOut(auth: Auth, onMessage: (Tip) -> Unit, onClose:
                 busy = busy,
                 onGoogle = {
                     busy = true
+                    val w = Work(Mood.GUARDING, "Waiting for Google…")
+                    onWork(w, true)
                     scope.launch {
                         try {
                             auth.signInWithGoogle(activity)
@@ -150,8 +156,10 @@ private fun ColumnScope.SignedOut(auth: Auth, onMessage: (Tip) -> Unit, onClose:
                             onMessage(Tip(Mood.HELP, "No Google account on this phone. Add one in Settings, or continue with email."))
                         } catch (e: Exception) {
                             onMessage(Tip(Mood.SAD, "Couldn't sign in: ${e.message}"))
+                        } finally {
+                            busy = false
+                            onWork(w, false)
                         }
-                        busy = false
                     }
                 },
                 onEmail = { step = EmailStep.ENTER },
@@ -249,10 +257,6 @@ private fun ChooseMethod(available: Boolean, busy: Boolean, onGoogle: () -> Unit
         OutlineButton("Continue with Google", leading = "G", enabled = available && !busy, onClick = onGoogle)
         Spacer(Modifier.height(12.dp))
         OutlineButton("Continue with email", icon = R.drawable.px_mail, enabled = available && !busy, onClick = onEmail)
-        if (busy) {
-            Spacer(Modifier.height(12.dp))
-            CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally))
-        }
     }
 }
 
@@ -285,10 +289,6 @@ private fun EnterEmail(email: String, onEmailChange: (String) -> Unit, busy: Boo
         )
         Spacer(Modifier.height(20.dp))
         PillButton("Send sign-in link", enabled = valid && !busy, modifier = Modifier.fillMaxWidth(), onClick = onSend)
-        if (busy) {
-            Spacer(Modifier.height(12.dp))
-            CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally))
-        }
     }
 }
 

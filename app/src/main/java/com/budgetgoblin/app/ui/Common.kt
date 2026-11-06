@@ -1,6 +1,13 @@
 package com.budgetgoblin.app.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
@@ -57,6 +64,7 @@ import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
@@ -478,6 +486,84 @@ fun ReactionBanner(reaction: Tip?, onDone: () -> Unit, modifier: Modifier) {
             }
             Spacer(Modifier.height(12.dp))
             PillButton("Continue", onClick = onDone, color = accent, modifier = Modifier.fillMaxWidth())
+        }
+    }
+}
+
+/** Something slow the app is waiting on, and the goblin's pose and line while it runs. */
+data class Work(val mood: Mood, val text: String)
+
+/**
+ * Covers the screen while [work] runs: taps and Back are blocked straight away, but the goblin
+ * panel only fades in after a moment so quick jobs don't flash it. If it drags on, it says to
+ * check the internet, so a slow connection doesn't look like a frozen app.
+ */
+@Composable
+fun GoblinLoading(work: Work?) {
+    var shown by remember { mutableStateOf(work) }
+    if (work != null) shown = work
+    val busy = work != null
+    var visible by remember { mutableStateOf(false) }
+    var slow by remember { mutableStateOf(false) }
+    LaunchedEffect(busy) {
+        visible = false
+        slow = false
+        if (!busy) return@LaunchedEffect
+        delay(300)
+        visible = true
+        delay(9_700)
+        slow = true
+    }
+    BackHandler(enabled = busy) {}
+    if (busy) {
+        Box(Modifier.fillMaxSize().pointerInput(Unit) {
+            awaitPointerEventScope { while (true) awaitPointerEvent().changes.forEach { it.consume() } }
+        })
+    }
+    AnimatedVisibility(visible = busy && visible, enter = fadeIn(), exit = fadeOut()) {
+        val w = shown ?: return@AnimatedVisibility
+        val scheme = MaterialTheme.colorScheme
+        Box(
+            Modifier.fillMaxSize().background(scheme.background.copy(alpha = 0.88f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Panel(Modifier.padding(horizontal = 40.dp).semantics { liveRegion = LiveRegionMode.Polite }) {
+                Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Mascot(w.mood, size = 96.dp, tappable = false)
+                    Spacer(Modifier.height(12.dp))
+                    Text(w.text, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
+                    Spacer(Modifier.height(16.dp))
+                    PixelDots(scheme.primary)
+                    if (slow) {
+                        Spacer(Modifier.height(16.dp))
+                        Text(
+                            "Still working. Check your internet if this takes much longer.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = scheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Three square pixels hopping in turn; they sit still when animations are off. */
+@Composable
+private fun PixelDots(color: Color) {
+    val still = rememberReducedMotion()
+    val t by rememberInfiniteTransition(label = "dots").animateFloat(
+        0f, 3f, infiniteRepeatable(tween(1200, easing = LinearEasing)), label = "hop",
+    )
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        repeat(3) { i ->
+            Box(
+                Modifier
+                    .size(10.dp)
+                    .graphicsLayer { translationY = if (!still && t.toInt() == i) -6.dp.toPx() else 0f }
+                    .drawBehind { drawRect(if (still || t.toInt() == i) color else color.copy(alpha = 0.35f)) }
+            )
         }
     }
 }

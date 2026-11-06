@@ -89,6 +89,7 @@ fun BudGetApp(
     var openCard by rememberSaveable { mutableStateOf<Long?>(null) } // a card whose audit is showing
     var uploadOffer by remember { mutableStateOf<String?>(null) }
     var confirmLink by remember { mutableStateOf<String?>(null) }
+    var work by remember { mutableStateOf<Work?>(null) } // something slow running; see GoblinLoading
     val sync = remember { CloudSync(state) }
     DisposableEffect(sync) { onDispose { sync.stop() } }
     val scope = rememberCoroutineScope()
@@ -99,6 +100,18 @@ fun BudGetApp(
     BackHandler(enabled = showAccount) { showAccount = false }
     BackHandler(enabled = !showAccount && openCard != null) { openCard = null }
     BackHandler(enabled = !showAccount && openCard == null && tab != Tab.HOME) { tab = Tab.HOME }
+
+    /** Shows the goblin loading screen while [block] runs (a later job's screen is left alone). */
+    suspend fun <T> working(w: Work, block: suspend () -> T): T {
+        work = w
+        try {
+            return block()
+        } finally {
+            if (work == w) work = null
+        }
+    }
+
+    val lettingIn = Work(Mood.GUARDING, "Letting you in…")
 
     fun startSync(uid: String) {
         state.syncedUid = uid
@@ -118,9 +131,11 @@ fun BudGetApp(
         val uid = auth.user?.uid ?: return
         scope.launch {
             try {
-                sync.deleteAll(uid)
-                sync.stop()
-                auth.deleteUser()
+                working(Work(Mood.SAD, "Packing up your account…")) {
+                    sync.deleteAll(uid)
+                    sync.stop()
+                    auth.deleteUser()
+                }
                 state.clearLocal()
                 reaction = Tip(Mood.SAD, "Account deleted. Bye for now!")
             } catch (_: FirebaseAuthRecentLoginRequiredException) {
@@ -133,7 +148,7 @@ fun BudGetApp(
 
     /** Uploads this phone's entries; on failure keeps them local, says so, and returns false. */
     suspend fun upload(uid: String): Boolean = try {
-        sync.upload(uid)
+        working(Work(Mood.ADDING, "Bringing your entries over…")) { sync.upload(uid) }
         true
     } catch (_: Exception) {
         reaction = Tip(Mood.ALERT, "Couldn't upload your entries yet. They're safe on this phone, and I'll try again next time.")
@@ -147,7 +162,7 @@ fun BudGetApp(
         val uid = auth.user?.uid ?: return@LaunchedEffect sync.stop()
         if (state.syncedUid == uid) return@LaunchedEffect sync.start(uid)
         val accountHasData = try {
-            sync.hasData(uid)
+            working(Work(Mood.CURIOUS, "Checking your account…")) { sync.hasData(uid) }
         } catch (e: Exception) {
             sync.markFailed(e)
             reaction = Tip(Mood.ALERT, "Couldn't reach your account yet. Your entries are safe on this phone, and I'll try again next time.")
@@ -168,7 +183,7 @@ fun BudGetApp(
         if (auth.user != null || auth.pendingHandoff == null) return@LaunchedEffect
         val link = auth.awaitHandoff() ?: return@LaunchedEffect
         val email = auth.pendingEmail ?: return@LaunchedEffect
-        runCatching { auth.finishEmailLink(email, link) }
+        runCatching { working(lettingIn) { auth.finishEmailLink(email, link) } }
             .onFailure { reaction = Tip(Mood.SAD, "That sign-in link didn't work. It may have expired, so send a new one.") }
         showAccount = false
     }
@@ -182,7 +197,7 @@ fun BudGetApp(
         if (email == null) {
             confirmLink = link
         } else {
-            runCatching { auth.finishEmailLink(email, link) }
+            runCatching { working(lettingIn) { auth.finishEmailLink(email, link) } }
                 .onFailure { reaction = Tip(Mood.SAD, "That sign-in link didn't work. It may have expired, so send a new one.") }
         }
         showAccount = false
@@ -194,6 +209,7 @@ fun BudGetApp(
                 null -> AccountScreen(
                     auth,
                     onMessage = { reaction = it },
+                    onWork = { w, running -> if (running) work = w else if (work == w) work = null },
                     onClose = { showAccount = false },
                     onSignOut = ::signOut,
                     onDeleteAccount = ::deleteAccount,
@@ -247,6 +263,7 @@ fun BudGetApp(
             onDone = { reaction = null },
             modifier = Modifier.align(Alignment.BottomCenter),
         )
+        GoblinLoading(work)
     }
 
     if (showHelp) HelpDialog(onDismiss = { showHelp = false })
@@ -286,7 +303,7 @@ fun BudGetApp(
             onConfirm = { email ->
                 confirmLink = null
                 scope.launch {
-                    runCatching { auth.finishEmailLink(email, link) }
+                    runCatching { working(lettingIn) { auth.finishEmailLink(email, link) } }
                         .onFailure { reaction = Tip(Mood.SAD, "That didn't match. Use the email the link was sent to.") }
                 }
             },

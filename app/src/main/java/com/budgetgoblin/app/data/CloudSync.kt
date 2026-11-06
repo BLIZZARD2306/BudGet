@@ -10,6 +10,7 @@ import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.MetadataChanges
 import com.google.firebase.firestore.SetOptions
 import com.google.firebase.firestore.Source
+import com.google.firebase.firestore.WriteBatch
 
 /** SYNCED: the account answered. BLOCKED: it refused this phone (e.g. App Check). OFFLINE: unreachable. */
 enum class SyncStatus { CONNECTING, SYNCED, BLOCKED, OFFLINE }
@@ -94,22 +95,29 @@ class CloudSync(private val state: BudgetState) {
 
     /** Copies everything on this phone into the account, in one go. */
     suspend fun upload(uid: String) {
-        val batch = db.batch()
-        state.transactions.forEach { batch.set(transactions(uid).document(it.id.toString()), fromTransaction(it)) }
-        state.challenges.forEach { batch.set(challenges(uid).document(it.startedAt.toString()), fromChallenge(it)) }
-        state.accounts.forEach { batch.set(accounts(uid).document(it.id.toString()), fromAccount(it)) }
-        batch.set(user(uid), mapOf(FIELD_BUDGET to state.monthlyBudget) + fromSchedule(state.schedule), SetOptions.merge())
-        batch.commit().await()
+        commit(
+            state.transactions.map { t -> { b: WriteBatch -> b.set(transactions(uid).document(t.id.toString()), fromTransaction(t)) } } +
+                state.challenges.map { c -> { b: WriteBatch -> b.set(challenges(uid).document(c.startedAt.toString()), fromChallenge(c)) } } +
+                state.accounts.map { a -> { b: WriteBatch -> b.set(accounts(uid).document(a.id.toString()), fromAccount(a)) } } +
+                { b: WriteBatch -> b.set(user(uid), mapOf(FIELD_BUDGET to state.monthlyBudget) + fromSchedule(state.schedule), SetOptions.merge()) }
+        )
     }
 
-    /** Removes all of the account's data (used before deleting the account). */
+    /** Removes all of the account's data (used before deleting the account). The user document goes last. */
     suspend fun deleteAll(uid: String) {
-        val batch = db.batch()
-        transactions(uid).get().await().documents.forEach { batch.delete(it.reference) }
-        challenges(uid).get().await().documents.forEach { batch.delete(it.reference) }
-        accounts(uid).get().await().documents.forEach { batch.delete(it.reference) }
-        batch.delete(user(uid))
-        batch.commit().await()
+        val docs = transactions(uid).get().await().documents +
+            challenges(uid).get().await().documents +
+            accounts(uid).get().await().documents
+        commit(docs.map { d -> { b: WriteBatch -> b.delete(d.reference) } } + { b: WriteBatch -> b.delete(user(uid)) })
+    }
+
+    /** Runs [writes] in batches of at most 500, Firestore's limit per batch, in order. */
+    private suspend fun commit(writes: List<(WriteBatch) -> Any>) {
+        writes.chunked(MAX_BATCH).forEach { chunk ->
+            val batch = db.batch()
+            chunk.forEach { it(batch) }
+            batch.commit().await()
+        }
     }
 
     fun put(t: Transaction) { uid?.let { transactions(it).document(t.id.toString()).set(fromTransaction(t)) } }
@@ -175,5 +183,6 @@ class CloudSync(private val state: BudgetState) {
 
     private companion object {
         const val FIELD_BUDGET = "monthlyBudget"
+        const val MAX_BATCH = 500
     }
 }
