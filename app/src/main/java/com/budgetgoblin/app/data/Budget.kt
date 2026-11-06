@@ -37,6 +37,32 @@ fun isThisMonth(millis: Long, now: Long = System.currentTimeMillis()): Boolean {
     return a.get(Calendar.YEAR) == b.get(Calendar.YEAR) && a.get(Calendar.MONTH) == b.get(Calendar.MONTH)
 }
 
+/** Rounds money to whole cents, so 478.60 + 3.85 equals 482.45 and a 3-way split isn't 33.333… */
+fun cents(x: Double): Double = Math.round(x * 100) / 100.0
+
+/** The total of these transactions' amounts, in whole cents. */
+fun Iterable<Transaction>.total(): Double = cents(sumOf { it.amount })
+
+/**
+ * What an amount field keeps of [typed]: ASCII digits and one decimal point. The phone's own decimal
+ * separator counts as the point (a comma in many languages, so "12,50" is 12.50, never 1250); the
+ * other of ',' and '.' is a thousands separator and is dropped. With [allowNegative], a leading '-' stays.
+ */
+fun cleanAmount(
+    typed: String,
+    allowNegative: Boolean = false,
+    decimalSeparator: Char = java.text.DecimalFormatSymbols.getInstance().decimalSeparator,
+): String {
+    val out = StringBuilder()
+    var point = false
+    for (c in typed) when {
+        c in '0'..'9' -> out.append(c)
+        (c == decimalSeparator || c == '.' && decimalSeparator != ',') && !point -> { point = true; out.append('.') }
+        c == '-' && allowNegative && out.isEmpty() -> out.append(c)
+    }
+    return out.toString()
+}
+
 /** Midnight at the start of the day [daysAgo] days before [now]. */
 fun startOfDay(daysAgo: Int, now: Long = System.currentTimeMillis()): Long =
     Calendar.getInstance().apply {
@@ -53,25 +79,28 @@ fun startOfDay(daysAgo: Int, now: Long = System.currentTimeMillis()): Long =
 class BudgetStore(context: Context) {
     private val prefs = context.getSharedPreferences("budget", Context.MODE_PRIVATE)
 
+    /** A fresh install starts empty. Starter samples saved by older versions (ids 1, 2, 3…) are dropped. */
     fun loadTransactions(): List<Transaction> {
-        val raw = prefs.getString(KEY_TRANSACTIONS, null) ?: return sampleData()
-        return raw.lines().mapNotNull(::decode)
+        val raw = prefs.getString(KEY_TRANSACTIONS, null) ?: return emptyList()
+        return raw.lines().mapNotNull(::decode).filterNot { isSample(it.id) }
     }
 
     fun saveTransactions(transactions: List<Transaction>) {
         prefs.edit { putString(KEY_TRANSACTIONS, transactions.joinToString("\n", transform = ::encode)) }
     }
 
-    /** Whether anything has been saved yet; a fresh install only has the starter sample. */
-    val hasSavedData get() = prefs.contains(KEY_TRANSACTIONS) || prefs.contains(KEY_CHALLENGES)
+    /** Whether the user has changed anything on this phone yet (entries, challenges, cards or budget). */
+    val hasSavedData get() = listOf(KEY_TRANSACTIONS, KEY_CHALLENGES, KEY_ACCOUNTS, KEY_BUDGET_EXACT, KEY_BUDGET).any(prefs::contains)
 
     fun loadSyncedUid(): String? = prefs.getString(KEY_SYNCED_UID, null)
 
     fun saveSyncedUid(uid: String?) = prefs.edit { putString(KEY_SYNCED_UID, uid) }
 
-    fun loadBudget(): Double = prefs.getFloat(KEY_BUDGET, DEFAULT_BUDGET).toDouble()
+    /** Saved as text so it comes back exact (older versions saved a Float, which rounds big budgets). */
+    fun loadBudget(): Double =
+        prefs.getString(KEY_BUDGET_EXACT, null)?.toDoubleOrNull() ?: prefs.getFloat(KEY_BUDGET, DEFAULT_BUDGET).toDouble()
 
-    fun saveBudget(amount: Double) = prefs.edit { putFloat(KEY_BUDGET, amount.toFloat()) }
+    fun saveBudget(amount: Double) = prefs.edit { putString(KEY_BUDGET_EXACT, amount.toString()) }
 
     /** The wallet's cards; Cash is always first, even on a fresh install. */
     fun loadAccounts(): List<Account> {
@@ -126,28 +155,11 @@ class BudgetStore(context: Context) {
         )
     }
 
-    private fun sampleData(): List<Transaction> {
-        var id = 0L
-        fun t(title: String, amount: Double, category: Category?, daysAgo: Int) =
-            Transaction(++id, title, amount, isIncome = category == null, category = category,
-                date = startOfDay(daysAgo) + HOUR * 13)
-        return listOf(
-            t("Coffee with Sam", 6.50, Category.COFFEE, 0),
-            t("Groceries", 86.40, Category.FOOD, 0),
-            t("Sneakers", 120.0, Category.SHOPPING, 1),
-            t("Ramen night", 24.0, Category.FOOD, 2),
-            t("Bus pass", 55.0, Category.TRANSPORT, 3),
-            t("Cinema", 18.0, Category.FUN, 4),
-            t("Electricity", 62.15, Category.BILLS, 5),
-            t("Latte", 4.80, Category.COFFEE, 5),
-            t("Gift", 35.0, Category.OTHER, 6),
-            t("Rent", 450.0, Category.BILLS, 6),
-            t("Salary", 2800.0, null, 6),
-        ).filter { isThisMonth(it.date) }
-    }
-
     companion object {
         const val DEFAULT_BUDGET = 2000f
+
+        /** The old starter samples had ids 1, 2, 3…; real entries use the time they were made. */
+        fun isSample(id: Long) = id < 1_000_000_000_000
         private const val TOP_UP = "+BUDGET"
         private const val KEY_PAY_CYCLE = "pay_cycle"
         private const val KEY_ACCOUNTS = "accounts"
@@ -155,7 +167,8 @@ class BudgetStore(context: Context) {
         private const val KEY_PAY_ANCHOR = "pay_anchor"
         private const val KEY_TRANSACTIONS = "transactions"
         private const val KEY_SYNCED_UID = "synced_uid"
-        private const val KEY_BUDGET = "monthly_budget"
+        private const val KEY_BUDGET = "monthly_budget" // older Float copy, read only
+        private const val KEY_BUDGET_EXACT = "monthly_budget_exact"
         private const val KEY_CHALLENGES = "challenges"
         private val HOUR = TimeUnit.HOURS.toMillis(1)
     }

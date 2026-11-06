@@ -46,6 +46,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.budgetgoblin.app.R
+import com.budgetgoblin.app.data.cleanAmount
+import com.budgetgoblin.app.data.total
 import com.budgetgoblin.app.data.Account
 import com.budgetgoblin.app.data.AccountKind
 import com.budgetgoblin.app.data.BudgetState
@@ -107,7 +109,7 @@ fun WalletScreen(state: BudgetState, onOpenCard: (Account) -> Unit, scrollToTop:
         Panel(padding = 0.dp) {
             Category.entries.forEachIndexed { i, c ->
                 if (i > 0) HorizontalDivider(Modifier.padding(start = 64.dp), thickness = 2.dp, color = MaterialTheme.colorScheme.outlineVariant)
-                BudgetRow(c, month.filter { it.category == c }.sumOf { it.amount })
+                BudgetRow(c, month.filter { it.category == c }.total())
             }
         }
     }
@@ -226,7 +228,7 @@ fun CardDialog(existing: Account?, onDismiss: () -> Unit, onSave: (Account) -> U
                 }
                 OutlinedTextField(
                     value = start,
-                    onValueChange = { start = it.filter { c -> c.isDigit() || c == '.' || c == '-' } },
+                    onValueChange = { start = cleanAmount(it, allowNegative = true) },
                     label = { Text("Money on it before tracking") },
                     prefix = { Text(appCurrency.symbol) },
                     singleLine = true,
@@ -286,8 +288,8 @@ fun CardDialog(existing: Account?, onDismiss: () -> Unit, onSave: (Account) -> U
 @Composable
 fun CardDetailScreen(state: BudgetState, account: Account, onBack: () -> Unit) {
     val history = state.historyOf(account)
-    val moneyIn = history.filter { it.isIncome }.sumOf { it.amount }
-    val moneyOut = history.filterNot { it.isIncome }.sumOf { it.amount }
+    val moneyIn = history.filter { it.isIncome }.total()
+    val moneyOut = history.filterNot { it.isIncome }.total()
     val balance = state.balanceOf(account)
     var editing by rememberSaveable { mutableStateOf(false) }
 

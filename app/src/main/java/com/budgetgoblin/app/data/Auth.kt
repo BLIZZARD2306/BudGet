@@ -151,6 +151,10 @@ class Auth(private val context: Context) {
         CredentialManager.create(context).clearCredentialState(ClearCredentialStateRequest())
     }
 
+    /** Whether the account was signed into within the last few minutes, which Firebase needs before deleting it. */
+    val signedInRecently: Boolean
+        get() = (auth.currentUser?.metadata?.lastSignInTimestamp ?: 0L) > System.currentTimeMillis() - RECENT_SIGN_IN
+
     /** Deletes the sign-in account itself; Firebase may ask for a fresh sign-in first. */
     suspend fun deleteUser() {
         auth.currentUser?.delete()?.await()
@@ -161,5 +165,6 @@ class Auth(private val context: Context) {
         const val KEY_PENDING_EMAIL = "pending_email"
         const val KEY_HANDOFF = "pending_handoff"
         const val KEY_HANDOFF_CODE = "pending_handoff_code"
+        const val RECENT_SIGN_IN = 4L * 60 * 1000 // Firebase's limit is about 5 minutes
     }
 }

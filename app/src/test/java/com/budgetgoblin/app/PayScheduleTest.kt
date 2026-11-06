@@ -35,6 +35,14 @@ class PayScheduleTest {
         assertEquals("2026-10-29..2026-11-05", range(PaySchedule(PayCycle.WEEKLY, Calendar.THURSDAY), "2026-11-04"))
     }
 
+    @Test fun everyTwoWeeksWithoutAPaydayKeepsItsRhythm() {
+        // No anchor picked: the 2 weeks must not restart each week (they used to count from today).
+        val s = PaySchedule(PayCycle.BIWEEKLY, Calendar.MONDAY)
+        assertEquals("2026-11-02..2026-11-16", range(s, "2026-11-04"))
+        assertEquals("2026-11-02..2026-11-16", range(s, "2026-11-11"))
+        assertEquals("2026-11-16..2026-11-30", range(s, "2026-11-18"))
+    }
+
     @Test fun everyTwoWeeks() {
         val s = PaySchedule(PayCycle.BIWEEKLY, anchor = day("2026-10-23"))
         assertEquals("2026-10-23..2026-11-06", range(s, "2026-11-04"))

@@ -55,8 +55,10 @@ data class PaySchedule(
                 Period(start, c.timeInMillis)
             }
             PayCycle.BIWEEKLY -> {
-                // Step from the anchor payday in 14-day jumps to the one at or before today.
-                val a = midnight(if (anchor > 0) anchor else lastWeekday(now, weekStart))
+                // Step from the anchor payday in 14-day jumps to the one at or before today. Without an
+                // anchor, a fixed reference week keeps the rhythm steady (counting from today would
+                // restart the 2 weeks every week).
+                val a = midnight(if (anchor > 0) anchor else lastWeekday(REFERENCE_WEEK, weekStart))
                 if (a.timeInMillis <= c.timeInMillis) {
                     while (true) {
                         val next = (a.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, 14) }
@@ -104,6 +106,9 @@ data class PaySchedule(
 
     companion object {
         private const val DAY = 24L * 60 * 60 * 1000
+
+        /** Sunday 7 January 2024: the week every-2-weeks counts from when no payday was picked. */
+        private val REFERENCE_WEEK = Calendar.getInstance().apply { clear(); set(2024, Calendar.JANUARY, 7, 12, 0) }.timeInMillis
 
         fun midnight(millis: Long): Calendar = Calendar.getInstance().apply {
             timeInMillis = millis

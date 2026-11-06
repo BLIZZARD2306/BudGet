@@ -17,7 +17,7 @@ class BudgetState(private val store: BudgetStore) {
 
     val transactions = mutableStateListOf<Transaction>().apply {
         addAll(store.loadTransactions())
-        // Saving straight back pins down dates guessed for older saves, so they don't shift day to day.
+        // Saving straight back pins down dates guessed for older saves (and drops old starter samples).
         if (store.hasSavedData) store.saveTransactions(this)
     }
     val challenges = mutableStateListOf<Challenge>().apply { addAll(store.loadChallenges()) }
@@ -37,7 +37,7 @@ class BudgetState(private val store: BudgetStore) {
 
     /** Starting amount, plus money in, minus money out. */
     fun balanceOf(account: Account): Double =
-        account.startBalance + historyOf(account).sumOf { if (it.isIncome) it.amount else -it.amount }
+        cents(account.startBalance + historyOf(account).sumOf { if (it.isIncome) it.amount else -it.amount })
 
     val totalBalance: Double get() = accounts.sumOf { balanceOf(it) }
 
@@ -82,8 +82,11 @@ class BudgetState(private val store: BudgetStore) {
         get() = store.loadSyncedUid()
         set(value) = store.saveSyncedUid(value)
 
-    /** True once the user has made their own changes here (the starter sample doesn't count). */
+    /** True once the user has made their own changes here. */
     val hasOwnData get() = store.hasSavedData
+
+    /** Whether this phone holds anything worth copying into an account: entries, challenges or cards. */
+    val hasLocalEntries get() = hasOwnData && (transactions.isNotEmpty() || challenges.isNotEmpty() || accounts.any { it.id != Account.CASH_ID })
 
     val thisMonth: List<Transaction> get() = transactions.filter { isThisMonth(it.date) }
 
@@ -92,7 +95,7 @@ class BudgetState(private val store: BudgetStore) {
     val thisPeriod: List<Transaction> get() = period.let { p -> transactions.filter { it.date in p } }
 
     /** One-time top-ups added to this period's budget. */
-    val topUps: Double get() = thisPeriod.filter { it.isIncome && it.toBudget }.sumOf { it.amount }
+    val topUps: Double get() = thisPeriod.filter { it.isIncome && it.toBudget }.total()
 
     /** This period's spending budget: the per-period budget plus any top-ups. */
     val budgetThisPeriod: Double get() = monthlyBudget + topUps
@@ -114,8 +117,14 @@ class BudgetState(private val store: BudgetStore) {
             return streak
         }
 
-    /** Adds [t] and returns the challenges it broke. */
-    fun add(t: Transaction): List<Challenge> {
+    /**
+     * Adds [entry] and returns the challenges it broke. Challenges that already ran their course are
+     * completed first, so spending after one ends never breaks it. Ids are kept unique (two entries
+     * in the same millisecond would otherwise be one document in the cloud).
+     */
+    fun add(entry: Transaction): List<Challenge> {
+        val t = if (transactions.any { it.id == entry.id }) entry.copy(id = transactions.maxOf { it.id } + 1) else entry
+        completeFinished(t.date)
         transactions.add(0, t)
         store.saveTransactions(transactions)
         cloud?.put(t)

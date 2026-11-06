@@ -29,8 +29,10 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -49,6 +51,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.budgetgoblin.app.R
+import com.budgetgoblin.app.data.cents
+import com.budgetgoblin.app.data.cleanAmount
+import com.budgetgoblin.app.data.total
 import com.budgetgoblin.app.data.BudgetState
 import com.budgetgoblin.app.data.Transaction
 import com.budgetgoblin.app.data.startOfDay
@@ -60,13 +65,14 @@ import java.util.Calendar
 import java.util.Date
 
 @Composable
-fun HomeScreen(state: BudgetState, signedIn: Boolean, synced: Boolean, onHelp: () -> Unit, onAccount: () -> Unit) {
+fun HomeScreen(state: BudgetState, signedIn: Boolean, synced: Boolean, onHelp: () -> Unit, onAccount: () -> Unit, scrollToTop: Int = 0) {
     val scroll = rememberScrollState()
+    LaunchedEffect(scrollToTop) { if (scrollToTop > 0) scroll.animateScrollTo(0) }
     val month = state.thisPeriod // this pay period (a month, a week, ...)
-    val spent = month.filterNot { it.isIncome }.sumOf { it.amount }
+    val spent = month.filterNot { it.isIncome }.total()
     val budget = state.budgetThisPeriod // per-period budget plus this period's top-ups
     val schedule = state.schedule
-    val left = budget - spent
+    val left = cents(budget - spent)
     var editingBudget by rememberSaveable { mutableStateOf(false) }
     var addingMoney by rememberSaveable { mutableStateOf(false) }
     var showAll by rememberSaveable { mutableStateOf(false) }
@@ -93,7 +99,7 @@ fun HomeScreen(state: BudgetState, signedIn: Boolean, synced: Boolean, onHelp: (
         Spacer(Modifier.height(20.dp))
         RemainingCard(remaining = left, spent = spent, budget = budget, topUps = state.topUps, resets = schedule.resetLabel(), periodName = schedule.periodName, onAddMoney = { addingMoney = true })
         Spacer(Modifier.height(20.dp))
-        SpeechBubble(overallTip(month, budget))
+        SpeechBubble(overallTip(month, budget, schedule.periodName))
         Spacer(Modifier.height(20.dp))
         WeekPanel(state.transactions)
         IncomeSection(month, spent, schedule.periodName)
@@ -267,8 +273,8 @@ private fun RemainingCard(remaining: Double, spent: Double, budget: Double, topU
 @Composable
 private fun IncomeSection(month: List<Transaction>, spent: Double, periodName: String) {
     val income = month.filter { it.isIncome }
-    val total = income.sumOf { it.amount }
-    val toBudget = income.filter { it.toBudget }.sumOf { it.amount }
+    val total = income.total()
+    val toBudget = income.filter { it.toBudget }.total()
     val kept = total - spent
     SectionTitle("Income")
     Panel {
@@ -326,7 +332,7 @@ private fun AddMoneyDialog(periodName: String, onDismiss: () -> Unit, onSave: (D
                 )
                 OutlinedTextField(
                     value = text,
-                    onValueChange = { text = it.filter { c -> c.isDigit() || c == '.' } },
+                    onValueChange = { text = cleanAmount(it) },
                     label = { Text("Amount") },
                     prefix = { Text(appCurrency.symbol) },
                     singleLine = true,
@@ -364,7 +370,7 @@ private fun WeekPanel(transactions: List<Transaction>) {
     val days = (6 downTo 0).map { ago ->
         val from = startOfDay(ago)
         val to = startOfDay(ago - 1)
-        transactions.filter { !it.isIncome && it.date in from until to }.sumOf { it.amount }
+        transactions.filter { !it.isIncome && it.date in from until to }.total()
     }
     val labels = (6 downTo 0).map { Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -it) }.get(Calendar.DAY_OF_MONTH) }
     val max = days.max().coerceAtLeast(1.0)
@@ -424,6 +430,18 @@ private fun DayTotal(label: String, amount: Double, color: Color, modifier: Modi
 
 @Composable
 fun TransactionList(transactions: List<Transaction>, onDelete: (Transaction) -> Unit) {
+    var deleting by remember { mutableStateOf<Transaction?>(null) } // asks first: the ✕ is easy to hit
+    deleting?.let { t ->
+        AlertDialog(
+            onDismissRequest = { deleting = null },
+            title = { Text("Delete this entry?") },
+            text = { Text("${t.title}, ${(if (t.isIncome) "+" else "−") + money.format(t.amount)}. This can't be undone.") },
+            confirmButton = {
+                TextButton(onClick = { deleting = null; onDelete(t) }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { deleting = null }) { Text("Keep it") } },
+        )
+    }
     Panel(padding = 0.dp) {
         if (transactions.isEmpty()) {
             Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -435,7 +453,7 @@ fun TransactionList(transactions: List<Transaction>, onDelete: (Transaction) -> 
             Column(Modifier.padding(vertical = 6.dp)) {
                 transactions.forEachIndexed { i, t ->
                     if (i > 0) HorizontalDivider(Modifier.padding(start = 76.dp), thickness = 2.dp, color = MaterialTheme.colorScheme.outlineVariant)
-                    TransactionRow(t, onDelete = { onDelete(t) })
+                    TransactionRow(t, onDelete = { deleting = t })
                 }
             }
         }
@@ -500,7 +518,7 @@ private fun BudgetDialog(current: Double, title: String, onDismiss: () -> Unit, 
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
                     value = text,
-                    onValueChange = { text = it.filter { c -> c.isDigit() || c == '.' } },
+                    onValueChange = { text = cleanAmount(it) },
                     label = { Text("Budget per period") },
                     prefix = { Text(appCurrency.symbol) },
                     singleLine = true,

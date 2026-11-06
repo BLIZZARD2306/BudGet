@@ -433,7 +433,13 @@ private fun PaySchedulePanel(schedule: PaySchedule, onChange: (PaySchedule) -> U
             row.forEach { c ->
                 Tile(
                     selected = c == schedule.cycle,
-                    onClick = { onChange(schedule.copy(cycle = c)) },
+                    onClick = {
+                        // Every 2 weeks starts this week unless a payday week was already picked.
+                        val anchor = if (c == PayCycle.BIWEEKLY && schedule.anchor == 0L) {
+                            PaySchedule.lastWeekday(System.currentTimeMillis(), schedule.weekStart)
+                        } else schedule.anchor
+                        onChange(schedule.copy(cycle = c, anchor = anchor))
+                    },
                     modifier = Modifier.weight(1f).height(76.dp),
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {

@@ -3,6 +3,8 @@ package com.budgetgoblin.app.ui
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.horizontalScroll
+import com.budgetgoblin.app.data.cents
+import com.budgetgoblin.app.data.cleanAmount
 import com.budgetgoblin.app.data.Account
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.foundation.background
@@ -36,6 +38,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -70,10 +73,11 @@ fun AddScreen(accounts: List<Account>, onCancel: () -> Unit, onSave: (Transactio
     var split by rememberSaveable { mutableStateOf(false) }
     var toBudget by rememberSaveable { mutableStateOf(false) }
     var people by rememberSaveable { mutableIntStateOf(2) }
+    var saved by remember { mutableStateOf(false) } // a quick double tap must not add it twice
     val total = amountText.toDoubleOrNull()?.takeIf { it > 0 }
     val splitting = split && !isIncome
     // When splitting a bill, only your share counts toward the budget.
-    val amount = total?.let { if (splitting) it / people else it }
+    val amount = total?.let { if (splitting) cents(it / people) else it }
     val progress = listOf(true, amount != null, title.isNotBlank()).count { it } / 3f
     val scheme = MaterialTheme.colorScheme
 
@@ -152,7 +156,7 @@ fun AddScreen(accounts: List<Account>, onCancel: () -> Unit, onSave: (Transactio
             Panel(padding = 16.dp) {
                 BasicTextField(
                     value = amountText,
-                    onValueChange = { amountText = it.filter { c -> c.isDigit() || c == '.' } },
+                    onValueChange = { amountText = cleanAmount(it) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     textStyle = TextStyle(
@@ -276,6 +280,8 @@ fun AddScreen(accounts: List<Account>, onCancel: () -> Unit, onSave: (Transactio
                 modifier = Modifier.fillMaxWidth(),
                 onClick = {
                     val value = amount ?: return@PillButton
+                    if (saved) return@PillButton
+                    saved = true
                     val label = title.trim().ifEmpty { if (isIncome) "Income" else category.label }
                     onSave(
                         Transaction(

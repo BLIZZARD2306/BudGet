@@ -157,7 +157,7 @@ class CloudSync(private val state: BudgetState) {
     )
 
     private fun toTransaction(d: DocumentSnapshot): Transaction? = Transaction(
-        id = d.id.toLongOrNull() ?: return null,
+        id = d.id.toLongOrNull()?.takeUnless(BudgetStore::isSample) ?: return null, // old starter samples
         title = d.getString("title") ?: "",
         amount = d.getDouble("amount") ?: return null,
         isIncome = d.getBoolean("isIncome") ?: false,

@@ -24,6 +24,8 @@ import androidx.compose.ui.res.imageResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.budgetgoblin.app.R
+import com.budgetgoblin.app.data.cents
+import com.budgetgoblin.app.data.total
 import com.budgetgoblin.app.data.Category
 import com.budgetgoblin.app.data.Transaction
 
@@ -92,22 +94,22 @@ data class Tip(val mood: Mood, val text: String)
 
 const val SAVINGS_GOAL = 0.20 // save 20% of income
 
-/** [transactions] are this month's; [budget] is the monthly spending budget. */
-fun overallTip(transactions: List<Transaction>, budget: Double): Tip {
+/** [transactions] are this pay period's; [budget] is its spending budget; [period] is "month", "week"... */
+fun overallTip(transactions: List<Transaction>, budget: Double, period: String = "month"): Tip {
     if (transactions.isEmpty()) return Tip(Mood.HELP, "Hi, I'm your Budget Goblin! Tap + to log your first transaction.")
-    val income = transactions.filter { it.isIncome }.sumOf { it.amount }
-    val spent = transactions.filterNot { it.isIncome }.sumOf { it.amount }
-    if (spent >= budget) return Tip(Mood.BROKE, "Pockets are empty! This month's budget is all used up.")
+    val income = transactions.filter { it.isIncome }.total()
+    val spent = transactions.filterNot { it.isIncome }.total()
+    if (spent >= budget) return Tip(Mood.BROKE, "Pockets are empty! This $period's budget is all used up.")
     if (income > 0 && income - spent <= 0) return Tip(Mood.BROKE, "Spending has caught up with income.")
-    val usage = Category.entries.associateWith { c -> transactions.filter { it.category == c }.sumOf { it.amount } / c.monthlyLimit }
+    val usage = Category.entries.associateWith { c -> transactions.filter { it.category == c }.total() / c.monthlyLimit }
     usage.entries.firstOrNull { it.value > 1 }?.let { return Tip(Mood.SAD, "We went over on ${it.key.label}. Let's ease off a bit.") }
     usage.entries.firstOrNull { it.value >= 0.85 }?.let { return Tip(Mood.ALERT, "Careful! ${it.key.label} is almost maxed out.") }
-    if (spent >= budget * 0.85) return Tip(Mood.ALERT, "Careful! Only ${((1 - spent / budget) * 100).toInt()}% of the monthly budget is left.")
+    if (spent >= budget * 0.85) return Tip(Mood.ALERT, "Careful! Only ${((1 - spent / budget) * 100).toInt()}% of this $period's budget is left.")
     if (income == 0.0) return Tip(Mood.HAPPY, "All budgets on track. Keep it up!")
     val rate = (income - spent) / income
     return when {
         rate >= 0.5 -> Tip(Mood.CELEBRATE, "Half your income saved. Treasure secured!")
-        rate >= SAVINGS_GOAL -> Tip(Mood.PROUD, "Good habits! You're saving ${(rate * 100).toInt()}% this month.")
+        rate >= SAVINGS_GOAL -> Tip(Mood.PROUD, "Good habits! You're saving ${(rate * 100).toInt()}% this $period.")
         else -> Tip(Mood.HAPPY, "All budgets on track. Keep it up!")
     }
 }
@@ -124,25 +126,25 @@ fun categoryMood(spent: Double, limit: Double): Mood {
 }
 
 /** The goblin's reaction to [t], just added to this month's [before]. */
-fun reactionTo(t: Transaction, before: List<Transaction>, budget: Double): Tip {
+fun reactionTo(t: Transaction, before: List<Transaction>, budget: Double, period: String = "month"): Tip {
     val after = before + t
     fun savingsRate(list: List<Transaction>): Double {
-        val income = list.filter { it.isIncome }.sumOf { it.amount }
-        return if (income == 0.0) 0.0 else (income - list.filterNot { it.isIncome }.sumOf { it.amount }) / income
+        val income = list.filter { it.isIncome }.total()
+        return if (income == 0.0) 0.0 else (income - list.filterNot { it.isIncome }.total()) / income
     }
     if (savingsRate(before) < SAVINGS_GOAL && savingsRate(after) >= SAVINGS_GOAL) {
         return Tip(Mood.LEVEL_UP, "Savings goal reached! Level up!")
     }
-    if (t.isIncome && t.toBudget) return Tip(Mood.GUARDING, "Added to this month's budget. More room to spend!")
+    if (t.isIncome && t.toBudget) return Tip(Mood.GUARDING, "Added to this $period's budget. More room to spend!")
     if (t.isIncome) return Tip(Mood.INVESTING, "Money in! Watch it grow.")
     val category = t.category ?: return Tip(Mood.HAPPY, "Logged it!")
-    val spentBefore = before.filter { it.category == category }.sumOf { it.amount }
-    val totalBefore = before.filterNot { it.isIncome }.sumOf { it.amount }
-    if (totalBefore < budget && totalBefore + t.amount >= budget) {
-        return Tip(Mood.BROKE, "That's the whole monthly budget gone…")
+    val spentBefore = before.filter { it.category == category }.total()
+    val totalBefore = before.filterNot { it.isIncome }.total()
+    if (totalBefore < budget && cents(totalBefore + t.amount) >= budget) {
+        return Tip(Mood.BROKE, "That's this $period's whole budget gone…")
     }
     return when {
-        spentBefore <= category.monthlyLimit && spentBefore + t.amount > category.monthlyLimit ->
+        spentBefore <= category.monthlyLimit && cents(spentBefore + t.amount) > category.monthlyLimit ->
             Tip(Mood.SAD, "That pushed ${category.label} over budget…")
         t.amount >= category.monthlyLimit * 0.3 -> Tip(Mood.SHOCKED, "Whoa, that's a big one!")
         category == Category.FUN && t.amount >= 40 -> Tip(Mood.REGRETFUL, "Hmm… was that an impulse buy?")

@@ -56,6 +56,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.budgetgoblin.app.R
+import com.budgetgoblin.app.data.Account
 import com.budgetgoblin.app.data.Auth
 import com.budgetgoblin.app.data.BudgetState
 import com.budgetgoblin.app.data.CloudSync
@@ -86,6 +87,7 @@ fun BudGetApp(
     var showHelp by rememberSaveable { mutableStateOf(false) }
     var showAccount by rememberSaveable { mutableStateOf(false) }
     var walletToTop by remember { mutableIntStateOf(0) } // bumped when Wallet is tapped again
+    var homeToTop by remember { mutableIntStateOf(0) } // same for Home
     var openCard by rememberSaveable { mutableStateOf<Long?>(null) } // a card whose audit is showing
     var uploadOffer by remember { mutableStateOf<String?>(null) }
     var confirmLink by remember { mutableStateOf<String?>(null) }
@@ -129,6 +131,12 @@ fun BudGetApp(
 
     fun deleteAccount() {
         val uid = auth.user?.uid ?: return
+        // Firebase refuses to delete an account that wasn't signed into recently. Check first, so we
+        // never wipe the data and then fail to delete the account itself.
+        if (!auth.signedInRecently) {
+            reaction = Tip(Mood.ALERT, "For safety, sign out and sign back in, then try deleting again.")
+            return
+        }
         scope.launch {
             try {
                 working(Work(Mood.SAD, "Packing up your account…")) {
@@ -168,7 +176,7 @@ fun BudGetApp(
             reaction = Tip(Mood.ALERT, "Couldn't reach your account yet. Your entries are safe on this phone, and I'll try again next time.")
             return@LaunchedEffect
         }
-        val hasLocal = state.hasOwnData && state.transactions.isNotEmpty()
+        val hasLocal = state.hasLocalEntries // entries, challenges or cards made on this phone
         if (hasLocal && accountHasData) {
             uploadOffer = uid
             return@LaunchedEffect
@@ -219,7 +227,7 @@ fun BudGetApp(
                     themeMode = themeMode,
                     onThemeMode = onThemeMode,
                 )
-                Tab.HOME -> HomeScreen(state, signedIn = auth.user != null, synced = sync.status == SyncStatus.SYNCED, onHelp = { showHelp = true }, onAccount = { showAccount = true })
+                Tab.HOME -> HomeScreen(state, signedIn = auth.user != null, synced = sync.status == SyncStatus.SYNCED, onHelp = { showHelp = true }, onAccount = { showAccount = true }, scrollToTop = homeToTop)
                 Tab.WALLET -> openCard?.let { id -> state.accounts.firstOrNull { it.id == id } }
                     ?.let { CardDetailScreen(state, it, onBack = { openCard = null }) }
                     ?: WalletScreen(state, onOpenCard = { openCard = it.id }, scrollToTop = walletToTop)
@@ -231,7 +239,7 @@ fun BudGetApp(
                         val broken = state.add(t)
                         reaction = broken.firstOrNull()
                             ?.let { Tip(Mood.REGRETFUL, "Oops! That broke your ${it.type.title} challenge.") }
-                            ?: reactionTo(t, before, state.budgetThisPeriod)
+                            ?: reactionTo(t, before, state.budgetThisPeriod, state.schedule.periodName)
                         tab = Tab.HOME
                     },
                 )
@@ -252,6 +260,7 @@ fun BudGetApp(
                 current = tab,
                 onSelect = {
                     if (it == Tab.WALLET && tab == Tab.WALLET) { openCard = null; walletToTop++ }
+                    if (it == Tab.HOME && tab == Tab.HOME) homeToTop++
                     if (it != Tab.WALLET) openCard = null
                     tab = it
                 },
@@ -276,7 +285,7 @@ fun BudGetApp(
             title = { Text("Add this phone's entries?") },
             text = {
                 Text(
-                    "This phone has ${state.transactions.size} transactions that aren't in your account yet. " +
+                    "This phone has ${phoneContents(state)} that aren't in your account yet. " +
                         "Add them, or skip to use only what's already in your account."
                 )
             },
@@ -309,6 +318,16 @@ fun BudGetApp(
             },
         )
     }
+}
+
+/** "12 entries and 2 cards": what this phone would add to an account. */
+private fun phoneContents(state: BudgetState): String {
+    fun count(n: Int, one: String, many: String) = if (n == 0) null else "$n ${if (n == 1) one else many}"
+    return listOfNotNull(
+        count(state.transactions.size, "entry", "entries"),
+        count(state.challenges.size, "challenge", "challenges"),
+        count(state.accounts.count { it.id != Account.CASH_ID }, "card", "cards"),
+    ).joinToString(" and ")
 }
 
 /** The sign-in link inside [uri], which may arrive wrapped as the "link" parameter of a Hosting URL. */

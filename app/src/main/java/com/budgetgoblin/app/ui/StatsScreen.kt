@@ -27,6 +27,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.budgetgoblin.app.data.total
 import com.budgetgoblin.app.data.BudgetState
 import com.budgetgoblin.app.data.Category
 import com.budgetgoblin.app.ui.theme.CoinGold
@@ -36,10 +37,10 @@ import kotlin.math.roundToInt
 fun StatsScreen(state: BudgetState) {
     val scroll = rememberScrollState()
     val month = state.thisMonth
-    val income = month.filter { it.isIncome }.sumOf { it.amount }
-    val spent = month.filterNot { it.isIncome }.sumOf { it.amount }
+    val income = month.filter { it.isIncome }.total()
+    val spent = month.filterNot { it.isIncome }.total()
     val slices = Category.entries
-        .map { c -> c to month.filter { it.category == c }.sumOf { it.amount } }
+        .map { c -> c to month.filter { it.category == c }.total() }
         .filter { it.second > 0 }
         .sortedByDescending { it.second }
 
