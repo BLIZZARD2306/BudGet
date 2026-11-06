@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light only">
+<title>Sign in to BudGet</title>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;800;900&display=swap" rel="stylesheet">
+</head>
+<body style="margin:0;padding:0;background:#F7F1EA;">
+<!-- Inbox preview line -->
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;">Your goblin is guarding the door. Tap the button inside to sign in to BudGet.</div>
+
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#F7F1EA" style="background:#F7F1EA;">
+<tr><td align="center" style="padding:32px 16px;font-family:Nunito,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-weight:600;color:#3B3D4A;">
+
+  <!-- Logo + wordmark -->
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+    <td valign="middle"><img src="https://budget-goblin.vercel.app/email/logo.png" width="44" height="44" alt="" style="display:block;border:0;border-radius:12px;"></td>
+    <td valign="middle" style="padding-left:10px;font-size:28px;font-weight:900;letter-spacing:-0.5px;color:#3B3D4A;">BudGet</td>
+  </tr></table>
+
+  <!-- Main panel: chunky card, 2px border with a 5px lip -->
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+    style="max-width:440px;margin-top:20px;background:#FFFFFF;border:2px solid #E8E2DC;border-bottom-width:5px;border-radius:18px;">
+    <tr><td align="center" style="padding:28px 28px 0;">
+      <img src="https://budget-goblin.vercel.app/email/goblin-guarding.png" width="138" height="138" alt="The Budget Goblin guarding your money bag and piggy bank" style="display:block;border:0;">
+    </td></tr>
+
+    <tr><td align="center" style="padding:12px 28px 0;font-size:28px;line-height:34px;font-weight:900;letter-spacing:-0.5px;color:#3B3D4A;">
+      Your goblin is guarding the door
+    </td></tr>
+
+    <tr><td align="center" style="padding:12px 28px 0;font-size:16px;line-height:24px;color:#3B3D4A;">
+      Someone asked to sign in to BudGet as<br>
+      <strong style="font-weight:900;">%EMAIL%</strong>.<br>
+      If that was you, tap below and the goblin will let you in.
+    </td></tr>
+
+    <!-- Chunky Mint button with a darker lip -->
+    <tr><td style="padding:24px 28px 0;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+        <td align="center" bgcolor="#2FC46E" style="background:#2FC46E;border-radius:16px;border-bottom:5px solid #1FA75A;">
+          <a href="%LINK%" target="_blank"
+            style="display:block;padding:16px;font-family:Nunito,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:17px;font-weight:900;letter-spacing:1px;text-transform:uppercase;color:#FFFFFF;text-decoration:none;">
+            Sign in to BudGet
+          </a>
+        </td>
+      </tr></table>
+    </td></tr>
+
+    <tr><td align="center" style="padding:16px 28px 28px;font-size:14px;line-height:21px;color:#9A958F;">
+      Open it on the phone you asked from.<br>The link works once and expires soon.
+    </td></tr>
+  </table>
+
+  <!-- "Didn't ask?" panel -->
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+    style="max-width:440px;margin-top:16px;background:#FFFFFF;border:2px solid #E8E2DC;border-bottom-width:5px;border-radius:18px;">
+    <tr>
+      <td width="64" valign="middle" style="padding:16px 0 16px 16px;">
+        <img src="https://budget-goblin.vercel.app/email/goblin-help.png" width="54" height="54" alt="" style="display:block;border:0;">
+      </td>
+      <td valign="middle" style="padding:16px 18px 16px 12px;font-size:14px;line-height:21px;color:#3B3D4A;">
+        <strong style="font-weight:900;">Didn't ask for this?</strong><br>
+        <span style="color:#9A958F;">Just ignore this email. Your money stays locked up, and nobody gets in without this link.</span>
+      </td>
+    </tr>
+  </table>
+
+  <!-- Fallback link + footer -->
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:440px;">
+    <tr><td align="center" style="padding:24px 12px 0;font-size:12px;line-height:18px;color:#9A958F;word-break:break-all;">
+      Button not working? Paste this into your browser:<br>
+      <a href="%LINK%" style="color:#FF7B4A;font-weight:800;">%LINK%</a>
+    </td></tr>
+    <tr><td align="center" style="padding:20px 12px 0;font-size:13px;line-height:19px;color:#9A958F;">
+      <strong style="color:#3B3D4A;font-weight:900;">BudGet</strong> &middot; Your Budget Goblin keeps an eye on your money.
+    </td></tr>
+  </table>
+
+</td></tr>
+</table>
+</body>
+</html>
