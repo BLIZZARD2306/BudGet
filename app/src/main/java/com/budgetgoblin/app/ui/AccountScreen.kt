@@ -63,10 +63,9 @@ import androidx.credentials.exceptions.GetCredentialCancellationException
 import androidx.credentials.exceptions.NoCredentialException
 import com.budgetgoblin.app.R
 import com.budgetgoblin.app.data.Auth
+import com.budgetgoblin.app.data.CodeException
 import com.budgetgoblin.app.ui.theme.CoinGold
 import com.budgetgoblin.app.ui.theme.ThemeMode
-import com.google.firebase.FirebaseTooManyRequestsException
-import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -102,10 +101,11 @@ fun AccountScreen(
 private enum class EmailStep { CHOOSE, ENTER, SENT }
 
 private const val RESEND_SECONDS = 60
+private const val CODE_LENGTH = 6
 
 /**
  * Signed-out flow, one screen per step like the kit: choose a method, enter an email,
- * then a "check your email" screen with resend.
+ * then a screen to type the emailed code, with resend.
  */
 @Composable
 private fun ColumnScope.SignedOut(auth: Auth, onMessage: (Tip) -> Unit, onWork: (Work, Boolean) -> Unit, onClose: () -> Unit) {
@@ -115,21 +115,43 @@ private fun ColumnScope.SignedOut(auth: Auth, onMessage: (Tip) -> Unit, onWork: 
     var email by rememberSaveable { mutableStateOf(auth.pendingEmail ?: "") }
     var sentAt by rememberSaveable { mutableLongStateOf(0L) }
     var busy by rememberSaveable { mutableStateOf(false) }
+    var code by rememberSaveable { mutableStateOf("") }
+    var error by rememberSaveable { mutableStateOf<String?>(null) }
     BackHandler(enabled = step != EmailStep.CHOOSE) {
         step = if (step == EmailStep.SENT) EmailStep.ENTER else EmailStep.CHOOSE
     }
 
     fun send() {
         busy = true
-        val w = Work(Mood.ADDING, "Sending your sign-in link…")
+        error = null
+        val w = Work(Mood.ADDING, "Sending your code…")
         onWork(w, true)
         scope.launch {
             try {
-                auth.sendEmailLink(email.trim())
+                auth.sendCode(email.trim())
                 sentAt = System.currentTimeMillis()
+                code = ""
                 step = EmailStep.SENT
             } catch (e: Exception) {
                 onMessage(Tip(Mood.SAD, sendError(e)))
+            } finally {
+                busy = false
+                onWork(w, false)
+            }
+        }
+    }
+
+    fun verify() {
+        busy = true
+        error = null
+        val w = Work(Mood.GUARDING, "Letting you in…")
+        onWork(w, true)
+        scope.launch {
+            try {
+                auth.verifyCode(email.trim(), code) // once signed in, this screen gives way to the account
+            } catch (e: Exception) {
+                error = verifyError(e)
+                code = ""
             } finally {
                 busy = false
                 onWork(w, false)
@@ -179,11 +201,18 @@ private fun ColumnScope.SignedOut(auth: Auth, onMessage: (Tip) -> Unit, onWork: 
         }
         EmailStep.SENT -> {
             BackTitle("Check your email") { step = EmailStep.ENTER }
-            LinkSent(
+            CodeSent(
                 email = email.trim(),
-                code = auth.handoffCode,
+                code = code,
+                onCodeChange = {
+                    code = it
+                    error = null
+                    if (it.length == CODE_LENGTH && !busy) verify() // six digits typed: go straight in
+                },
+                error = error,
                 sentAt = sentAt,
                 busy = busy,
+                onVerify = ::verify,
                 onResend = ::send,
                 onOpenEmail = {
                     val intent = Intent.makeMainSelectorActivity(Intent.ACTION_MAIN, Intent.CATEGORY_APP_EMAIL)
@@ -200,10 +229,33 @@ private fun ColumnScope.SignedOut(auth: Auth, onMessage: (Tip) -> Unit, onWork: 
     }
 }
 
-private fun sendError(e: Exception) = when (e) {
-    is FirebaseTooManyRequestsException -> "Too many emails sent for now. Try again later, or continue with Google."
-    is FirebaseAuthInvalidCredentialsException -> "That email address doesn't look right."
-    else -> "Couldn't send the link: ${e.message}"
+private fun sendError(e: Exception) = when ((e as? CodeException)?.reason) {
+    "email" -> "That email address doesn't look right."
+    "too_soon" -> "Give it ${e.waitText()} before asking for another code."
+    "too_many" -> "Too many codes for now. Try again in ${e.waitText()}, or continue with Google."
+    "mail" -> "Couldn't send the email just now. Try again in a minute, or continue with Google."
+    null -> "Couldn't send the code. Check your internet and try again."
+    else -> "Couldn't send the code. Try again in a minute."
+}
+
+private fun verifyError(e: Exception): String {
+    val c = e as? CodeException ?: return "Couldn't check the code. Check your internet and try again."
+    return when (c.reason) {
+        "wrong" -> when (val left = c.attemptsLeft) {
+            null -> "That code isn't right. Check the newest email from BudGet."
+            1 -> "That code isn't right. 1 try left."
+            else -> "That code isn't right. $left tries left."
+        }
+        "expired" -> "That code has expired. Send a new one."
+        "locked" -> "Too many wrong tries. Send a new code."
+        "disabled" -> "This account has been switched off."
+        else -> "Couldn't check the code. Try again."
+    }
+}
+
+private fun Exception.waitText(): String {
+    val s = (this as? CodeException)?.retryAfter ?: return "a little while"
+    return if (s < 60) "$s seconds" else "${(s + 59) / 60} minutes"
 }
 
 /** The kit's sub-screen title: a back arrow on the left, title centred. */
@@ -270,7 +322,7 @@ private fun EnterEmail(email: String, onEmailChange: (String) -> Unit, busy: Boo
             Spacer(Modifier.height(8.dp))
             Text("Enter your email", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text(
-                "We'll email you a sign-in link. Tap it on this phone and you're in: no password, nothing to type.",
+                "We'll email you a 6-digit code. Type it here and you're in: no password needed.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
@@ -289,16 +341,19 @@ private fun EnterEmail(email: String, onEmailChange: (String) -> Unit, busy: Boo
             modifier = Modifier.fillMaxWidth(),
         )
         Spacer(Modifier.height(20.dp))
-        PillButton("Send sign-in link", enabled = valid && !busy, modifier = Modifier.fillMaxWidth(), onClick = onSend)
+        PillButton("Send code", enabled = valid && !busy, modifier = Modifier.fillMaxWidth(), onClick = onSend)
     }
 }
 
 @Composable
-private fun LinkSent(
+private fun CodeSent(
     email: String,
-    code: String?,
+    code: String,
+    onCodeChange: (String) -> Unit,
+    error: String?,
     sentAt: Long,
     busy: Boolean,
+    onVerify: () -> Unit,
     onResend: () -> Unit,
     onOpenEmail: () -> Unit,
     onChangeEmail: () -> Unit,
@@ -311,79 +366,73 @@ private fun LinkSent(
         }
     }
     val wait = (RESEND_SECONDS - (now - sentAt) / 1000).coerceAtLeast(0)
+    val complete = code.length == CODE_LENGTH
 
     Panel {
         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
             Mascot(Mood.CURIOUS, size = 96.dp)
             Spacer(Modifier.height(8.dp))
-            Text("Link sent!", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text("Code sent!", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text(
-                "We sent a sign-in link to",
+                "We emailed a 6-digit code to",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(email, fontWeight = FontWeight.SemiBold)
         }
         Spacer(Modifier.height(16.dp))
-        Step("1", "Open the email on this phone")
-        Step("2", "Tap the Sign in link. This screen signs in by itself")
-        Step("3", "Not there? Check Spam or Promotions. It can take a few minutes.")
-        if (code != null) {
-            Spacer(Modifier.height(16.dp))
-            HandoffCode(code)
+        // Our emails often land in Spam, so say so up front instead of as a last resort.
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.secondaryContainer, PanelShape)
+                .padding(12.dp)
+                .semantics(mergeDescendants = true) {},
+        ) {
+            Text(
+                "Check your Spam folder",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+            )
+            Text(
+                "Our email often lands in Spam or Promotions. If you find it there, tap \"Not spam\" so the next one reaches your inbox.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+            )
         }
-        Spacer(Modifier.height(20.dp))
-        PillButton("Open email app", modifier = Modifier.fillMaxWidth(), onClick = onOpenEmail)
+        Spacer(Modifier.height(16.dp))
+        OutlinedTextField(
+            value = code,
+            onValueChange = { typed -> onCodeChange(typed.filter(Char::isDigit).take(CODE_LENGTH)) },
+            label = { Text("6-digit code") },
+            singleLine = true,
+            enabled = !busy,
+            isError = error != null,
+            supportingText = { Text(error ?: "It works for 10 minutes. Never share it with anyone.") },
+            textStyle = MaterialTheme.typography.headlineSmall.copy(
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 6.sp,
+                textAlign = TextAlign.Center,
+            ),
+            shape = RoundedCornerShape(16.dp),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword, imeAction = ImeAction.Done),
+            keyboardActions = KeyboardActions(onDone = { if (complete && !busy) onVerify() }),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(16.dp))
+        PillButton("Sign in", enabled = complete && !busy, modifier = Modifier.fillMaxWidth(), onClick = onVerify)
+        Spacer(Modifier.height(12.dp))
+        OutlineButton("Open email app", icon = R.drawable.px_mail, enabled = true, onClick = onOpenEmail)
         Spacer(Modifier.height(12.dp))
         OutlineButton(
-            if (wait > 0) "Resend link in 0:%02d".format(wait) else "Resend link",
+            if (wait > 0) "Send a new code in 0:%02d".format(wait) else "Send a new code",
             enabled = wait == 0L && !busy,
             onClick = onResend,
         )
         TextButton(onClick = onChangeEmail, modifier = Modifier.align(Alignment.CenterHorizontally)) {
             Text("Use a different email")
         }
-    }
-}
-
-/** The code to type on a computer that opened the email; only ever shown on this phone. */
-@Composable
-private fun HandoffCode(code: String) {
-    val spaced = code.chunked(3).joinToString(" ")
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surfaceVariant, PanelShape)
-            .padding(16.dp)
-            .semantics(mergeDescendants = true) {},
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(
-            "Opened the email on a computer?",
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Bold,
-            textAlign = TextAlign.Center,
-        )
-        Text(
-            "Type this code on the page that opens:",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-        )
-        Text(
-            spaced,
-            fontSize = 32.sp,
-            fontWeight = FontWeight.Black,
-            letterSpacing = 4.sp,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(top = 6.dp).semantics { contentDescription = "Code ${code.toList().joinToString(" ")}" },
-        )
-        Text(
-            "Never share this code with anyone.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-        )
     }
 }
 

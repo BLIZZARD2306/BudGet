@@ -186,17 +186,8 @@ fun BudGetApp(
         startSync(uid)
     }
 
-    // The link was opened on another device (like a computer): its sign-in page hands it over here.
-    LaunchedEffect(auth.pendingHandoff, auth.user?.uid) {
-        if (auth.user != null || auth.pendingHandoff == null) return@LaunchedEffect
-        val link = auth.awaitHandoff() ?: return@LaunchedEffect
-        val email = auth.pendingEmail ?: return@LaunchedEffect
-        runCatching { working(lettingIn) { auth.finishEmailLink(email, link) } }
-            .onFailure { reaction = Tip(Mood.SAD, "That sign-in link didn't work. It may have expired, so send a new one.") }
-        showAccount = false
-    }
-
-    // A tapped email link opens the app; finish signing in with the address it was sent to.
+    // A tapped email link (sent by an older version, before sign-in codes) opens the app; finish
+    // signing in with the address it was sent to.
     LaunchedEffect(incomingLink) {
         val link = signInLink(auth, incomingLink ?: return@LaunchedEffect)
         onLinkHandled()
