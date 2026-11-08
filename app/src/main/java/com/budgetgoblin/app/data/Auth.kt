@@ -14,22 +14,24 @@ import com.google.android.gms.tasks.Task
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.firebase.FirebaseApp
-import com.google.firebase.auth.ActionCodeSettings
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
-import java.security.SecureRandom
-import java.util.Locale
-import java.util.UUID
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+
+/**
+ * The sign-in server said no. [reason] is its error code: "email", "wrong", "expired", "locked",
+ * "too_soon", "too_many", "mail" or "disabled".
+ */
+class CodeException(val reason: String, val attemptsLeft: Int? = null, val retryAfter: Int? = null) :
+    Exception("Sign-in server: $reason")
 
 /** Waits for a Play Services / Firebase task without blocking. */
 suspend fun <T> Task<T>.await(): T = suspendCancellableCoroutine { cont ->
@@ -40,7 +42,7 @@ suspend fun <T> Task<T>.await(): T = suspendCancellableCoroutine { cont ->
 }
 
 /**
- * Passwordless sign-in: "Continue with Google" or a one-tap link sent by email.
+ * Passwordless sign-in: "Continue with Google" or a 6-digit code sent by email.
  * Everything is a no-op when the app was built without google-services.json ([available] is false).
  */
 class Auth(private val context: Context) {
@@ -53,12 +55,10 @@ class Auth(private val context: Context) {
 
     init {
         if (available) auth.addAuthStateListener { user = it.currentUser }
+        prefs.edit { remove("pending_handoff").remove("pending_handoff_code") } // left over from link sign-in
     }
 
-    /** The project's free Hosting address; email links come from here and open the app (see the manifest). */
-    private val linkDomain get() = "${FirebaseApp.getInstance().options.projectId}.firebaseapp.com"
-
-    /** The email a link was last sent to, so tapping the link on this phone signs straight in. */
+    /** The email a code (or, in older versions, a link) was last sent to. */
     val pendingEmail: String? get() = prefs.getString(KEY_PENDING_EMAIL, null)
 
     suspend fun signInWithGoogle(activity: Activity) {
@@ -73,78 +73,61 @@ class Auth(private val context: Context) {
         auth.signInWithCredential(GoogleAuthProvider.getCredential(idToken, null)).await()
     }
 
+    /** Remembers the email a code was sent to, so the code screen survives the app being closed. */
+    private fun rememberEmail(email: String?) = prefs.edit {
+        if (email == null) remove(KEY_PENDING_EMAIL) else putString(KEY_PENDING_EMAIL, email)
+    }
+
     /**
-     * A one-time ID carried in the email link. If the link is opened on another device (a computer),
-     * the sign-in page asks for [handoffCode], which only this phone shows, and posts the link to
-     * handoff/<id>/<code> in the Realtime Database for this phone to pick up. The code stops a link
-     * requested by someone else (for your email, from their phone) from signing *them* in when you
-     * open the email: you never see their code, so the page never hands your link over.
+     * Emails a 6-digit sign-in code. The code is made, rate-limited and checked by BudGet's own
+     * server on Vercel (website repository, api/), because a check inside the app could be skipped.
      */
-    var pendingHandoff by mutableStateOf(prefs.getString(KEY_HANDOFF, null))
-        private set
+    suspend fun sendCode(email: String) {
+        post("send-code", JSONObject().put("email", email))
+        rememberEmail(email)
+    }
 
-    /** The 6-digit code to type on the computer's sign-in page, shown on "Check your email". */
-    var handoffCode by mutableStateOf(prefs.getString(KEY_HANDOFF_CODE, null))
-        private set
-
-    private val handoffUrl get() = "$databaseUrl/handoff/$pendingHandoff/$handoffCode.json"
-
-    suspend fun sendEmailLink(email: String) {
-        val handoff = UUID.randomUUID().toString().replace("-", "")
-        val code = String.format(Locale.ROOT, "%06d", SecureRandom().nextInt(1_000_000))
-        val settings = ActionCodeSettings.newBuilder()
-            .setUrl("https://$linkDomain/finishSignIn?h=$handoff")
-            .setHandleCodeInApp(true)
-            .setAndroidPackageName(context.packageName, true, null)
-            .build() // the link itself comes from the project's default firebaseapp.com domain
-        auth.sendSignInLinkToEmail(email, settings).await()
-        prefs.edit { putString(KEY_PENDING_EMAIL, email).putString(KEY_HANDOFF, handoff).putString(KEY_HANDOFF_CODE, code) }
-        pendingHandoff = handoff
-        handoffCode = code
+    /** Trades the emailed code for a Firebase sign-in token and signs in with it. */
+    suspend fun verifyCode(email: String, code: String) {
+        val token = post("verify-code", JSONObject().put("email", email).put("code", code)).getString("token")
+        auth.signInWithCustomToken(token).await()
+        rememberEmail(null)
     }
 
     fun isSignInLink(link: String) = available && auth.isSignInWithEmailLink(link)
 
+    /** Finishes a sign-in link sent by an older version of the app (before codes); new versions never send links. */
     suspend fun finishEmailLink(email: String, link: String) {
         auth.signInWithEmailLink(email, link).await()
-        if (pendingHandoff != null && handoffCode != null) runCatching { http("DELETE", handoffUrl) }
-        prefs.edit { remove(KEY_PENDING_EMAIL).remove(KEY_HANDOFF).remove(KEY_HANDOFF_CODE) }
-        pendingHandoff = null
-        handoffCode = null
+        rememberEmail(null)
     }
 
-    /**
-     * Waits (checking every 2 seconds, for up to 15 minutes) for the link to be opened on another
-     * device and returns it, or null if it never was.
-     */
-    suspend fun awaitHandoff(): String? {
-        if (pendingHandoff == null || handoffCode == null) return null // links sent before codes existed
-        repeat(450) {
-            val body = runCatching { http("GET", handoffUrl) }.getOrNull()
-            if (body != null && body != "null") {
-                val link = runCatching { JSONObject(body).optString("link") }.getOrNull()
-                if (!link.isNullOrEmpty() && isSignInLink(link)) return link
-            }
-            delay(2000)
-        }
-        runCatching { http("DELETE", handoffUrl) } // nothing arrived; leave no link behind
-        return null
-    }
-
-    private suspend fun http(method: String, url: String): String = withContext(Dispatchers.IO) {
-        val conn = URL(url).openConnection() as HttpURLConnection
+    /** POSTs JSON to the sign-in API; throws [CodeException] with the server's reason when it says no. */
+    private suspend fun post(path: String, body: JSONObject): JSONObject = withContext(Dispatchers.IO) {
+        val conn = URL("$API/$path").openConnection() as HttpURLConnection
         try {
-            conn.requestMethod = method
+            conn.requestMethod = "POST"
             conn.connectTimeout = 10_000
-            conn.readTimeout = 10_000
-            conn.inputStream.bufferedReader().use { it.readText() }
+            conn.readTimeout = 20_000
+            conn.doOutput = true
+            conn.setRequestProperty("Content-Type", "application/json")
+            conn.outputStream.use { it.write(body.toString().toByteArray()) }
+            val status = conn.responseCode
+            val text = (if (status in 200..299) conn.inputStream else conn.errorStream)
+                ?.bufferedReader()?.use { it.readText() }.orEmpty()
+            val json = runCatching { JSONObject(text) }.getOrDefault(JSONObject())
+            if (status !in 200..299) {
+                throw CodeException(
+                    reason = json.optString("error", "http_$status"),
+                    attemptsLeft = json.optInt("attemptsLeft", -1).takeIf { it >= 0 },
+                    retryAfter = json.optInt("retryAfter", -1).takeIf { it >= 0 },
+                )
+            }
+            json
         } finally {
             conn.disconnect()
         }
     }
-
-    /** The Realtime Database (default US instance) that carries sign-in links between devices. */
-    private val databaseUrl get() = "https://${FirebaseApp.getInstance().options.projectId}-default-rtdb.firebaseio.com"
 
     suspend fun signOut() {
         auth.signOut()
@@ -163,8 +146,7 @@ class Auth(private val context: Context) {
 
     private companion object {
         const val KEY_PENDING_EMAIL = "pending_email"
-        const val KEY_HANDOFF = "pending_handoff"
-        const val KEY_HANDOFF_CODE = "pending_handoff_code"
+        const val API = "https://budget-goblin.vercel.app/api"
         const val RECENT_SIGN_IN = 4L * 60 * 1000 // Firebase's limit is about 5 minutes
     }
 }
